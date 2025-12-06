@@ -1,7 +1,7 @@
 """API v1 router aggregation"""
 from fastapi import APIRouter
 
-from app.api.v1 import factory, tokens, allowlist, captable, vesting, dividends, governance, admin
+from app.api.v1 import factory, tokens, allowlist, captable, vesting, dividends, governance, admin, sync
 
 api_router = APIRouter()
 
@@ -14,3 +14,4 @@ api_router.include_router(vesting.router, prefix="/tokens/{token_id}/vesting", t
 api_router.include_router(dividends.router, prefix="/tokens/{token_id}/dividends", tags=["Dividends"])
 api_router.include_router(governance.router, prefix="/tokens/{token_id}/governance", tags=["Governance"])
 api_router.include_router(admin.router, prefix="/tokens/{token_id}/admin", tags=["Admin"])
+api_router.include_router(sync.router, prefix="/sync", tags=["Sync"])

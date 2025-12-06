@@ -23,18 +23,7 @@ class Wallet(Base):
     # Relationships
     token = relationship("Token", back_populates="wallets")
     restrictions = relationship("WalletRestriction", back_populates="wallet", uselist=False)
-    sent_transfers = relationship(
-        "Transfer",
-        back_populates="from_wallet_rel",
-        foreign_keys="Transfer.from_wallet",
-        lazy="dynamic"
-    )
-    received_transfers = relationship(
-        "Transfer",
-        back_populates="to_wallet_rel",
-        foreign_keys="Transfer.to_wallet",
-        lazy="dynamic"
-    )
+    # Note: Transfer relationships removed due to FK constraints - transfers use wallet address strings
 
     __table_args__ = (
         # Unique constraint on token_id + address

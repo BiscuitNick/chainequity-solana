@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Plus, Coins, ExternalLink } from 'lucide-react'
+import { Plus, Coins, ExternalLink, RefreshCw } from 'lucide-react'
 
 interface TokenInfo {
   id: number
@@ -17,34 +17,59 @@ interface TokenInfo {
   createdAt: string
 }
 
-// Mock data
-const mockTokens: TokenInfo[] = [
-  {
-    id: 1,
-    symbol: 'ACME',
-    name: 'Acme Corp Equity',
-    mintAddress: 'Hk4M...8xYq',
-    totalSupply: 1000000,
-    decimals: 0,
-    holders: 120,
-    isPaused: false,
-    createdAt: '2024-01-01',
-  },
-  {
-    id: 2,
-    symbol: 'BETA',
-    name: 'Beta Industries',
-    mintAddress: 'Jm2N...9zWr',
-    totalSupply: 500000,
-    decimals: 0,
-    holders: 45,
-    isPaused: false,
-    createdAt: '2024-01-10',
-  },
-]
-
 export default function TokensPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [tokens, setTokens] = useState<TokenInfo[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchTokens = async () => {
+    setLoading(true)
+    setError(null)
+
+    try {
+      // First try to fetch from the backend API
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'
+      console.log('Fetching from:', `${apiUrl}/api/v1/factory/tokens`)
+      const response = await fetch(`${apiUrl}/api/v1/factory/tokens`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        // API worked - use the data (even if empty)
+        setTokens(data.map((t: any) => ({
+          id: t.token_id,
+          symbol: t.symbol,
+          name: t.name,
+          mintAddress: t.mint_address,
+          totalSupply: parseInt(t.total_supply) / Math.pow(10, t.decimals || 6),
+          decimals: t.decimals || 6,
+          holders: 0, // Would need separate query
+          isPaused: t.is_paused,
+          createdAt: t.created_at,
+        })))
+        setLoading(false)
+        return
+      }
+
+      // API failed - show empty state (don't try on-chain fallback which may fail)
+      console.warn('API returned non-ok status:', response.status)
+      setTokens([])
+    } catch (e: any) {
+      console.error('Failed to fetch tokens:', e)
+      setError(e.message || 'Failed to fetch tokens')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchTokens()
+  }, [])
 
   return (
     <div className="space-y-6">
@@ -55,11 +80,25 @@ export default function TokensPage() {
             Manage your tokenized securities
           </p>
         </div>
-        <Button onClick={() => setShowCreateModal(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Create Token
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={fetchTokens} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button onClick={() => setShowCreateModal(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Create Token
+          </Button>
+        </div>
       </div>
+
+      {error && (
+        <Card className="border-red-500/50 bg-red-500/10">
+          <CardContent className="pt-4">
+            <p className="text-red-500">{error}</p>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
@@ -67,7 +106,7 @@ export default function TokensPage() {
             <CardTitle className="text-sm font-medium">Total Tokens</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{mockTokens.length}</div>
+            <div className="text-2xl font-bold">{loading ? '...' : tokens.length}</div>
             <p className="text-xs text-muted-foreground">created</p>
           </CardContent>
         </Card>
@@ -77,7 +116,7 @@ export default function TokensPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {mockTokens.reduce((sum, t) => sum + t.totalSupply, 0).toLocaleString()}
+              {loading ? '...' : tokens.reduce((sum, t) => sum + t.totalSupply, 0).toLocaleString()}
             </div>
             <p className="text-xs text-muted-foreground">combined shares</p>
           </CardContent>
@@ -88,15 +127,34 @@ export default function TokensPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {mockTokens.reduce((sum, t) => sum + t.holders, 0)}
+              {loading ? '...' : tokens.reduce((sum, t) => sum + t.holders, 0)}
             </div>
             <p className="text-xs text-muted-foreground">unique wallets</p>
           </CardContent>
         </Card>
       </div>
 
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : tokens.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <Coins className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+            <h3 className="text-lg font-semibold mb-2">No tokens found</h3>
+            <p className="text-muted-foreground mb-4">
+              Create your first security token to get started.
+            </p>
+            <Button onClick={() => setShowCreateModal(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Token
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
       <div className="grid gap-4 md:grid-cols-2">
-        {mockTokens.map((token) => (
+        {tokens.map((token) => (
           <Card key={token.id} className="hover:border-primary/50 transition-colors cursor-pointer">
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -141,6 +199,7 @@ export default function TokensPage() {
           </Card>
         ))}
       </div>
+      )}
     </div>
   )
 }

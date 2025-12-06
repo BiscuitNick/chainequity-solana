@@ -24,18 +24,7 @@ class Transfer(Base):
 
     # Relationships
     token = relationship("Token", back_populates="transfers")
-    from_wallet_rel = relationship(
-        "Wallet",
-        back_populates="sent_transfers",
-        foreign_keys=[from_wallet],
-        primaryjoin="Transfer.from_wallet == Wallet.address",
-    )
-    to_wallet_rel = relationship(
-        "Wallet",
-        back_populates="received_transfers",
-        foreign_keys=[to_wallet],
-        primaryjoin="Transfer.to_wallet == Wallet.address",
-    )
+    # Note: Wallet relationships removed - from_wallet/to_wallet are address strings, not FKs
 
     def __repr__(self):
         return f"<Transfer {self.signature[:16]}... ({self.amount})>"

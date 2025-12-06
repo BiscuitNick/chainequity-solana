@@ -1,7 +1,14 @@
 'use client'
 
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui'
+import dynamic from 'next/dynamic'
 import { TokenSelector } from './TokenSelector'
+
+// Dynamically import WalletMultiButton to avoid hydration mismatch
+// (it renders differently on server vs client due to wallet detection)
+const WalletMultiButton = dynamic(
+  () => import('@solana/wallet-adapter-react-ui').then(mod => mod.WalletMultiButton),
+  { ssr: false }
+)
 
 export function Header() {
   return (

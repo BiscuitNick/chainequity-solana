@@ -57,3 +57,9 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Hide MetaMask from wallet modal - it's an EVM wallet, not Solana */
+.wallet-adapter-modal-list li:has(img[alt="MetaMask icon"]),
+.wallet-adapter-modal-list li:has(button[aria-label="MetaMask"]) {
+  display: none !important;
+}

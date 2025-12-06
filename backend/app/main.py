@@ -8,8 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.api.v1.router import api_router
 from app.api.websocket import websocket_router
-from app.models.database import init_db, close_db
+from app.models.database import init_db, close_db, async_session_factory
 from app.services.solana_client import close_solana_client
+from app.services.sync import sync_tokens_from_chain
 
 # Indexer is optional - only imported if available
 try:
@@ -51,6 +52,14 @@ async def lifespan(app: FastAPI):
     # Initialize database
     await init_db()
     logger.info("Database initialized")
+
+    # Sync on-chain tokens to database on startup
+    try:
+        async with async_session_factory() as db:
+            sync_stats = await sync_tokens_from_chain(db)
+            logger.info("On-chain token sync completed", **sync_stats)
+    except Exception as e:
+        logger.warning("Failed to sync on-chain tokens on startup", error=str(e))
 
     # Start indexer background task (if available)
     if INDEXER_AVAILABLE:
