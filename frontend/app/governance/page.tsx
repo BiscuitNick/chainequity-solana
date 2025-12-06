@@ -20,7 +20,7 @@ export default function GovernancePage() {
     setLoading(true)
     setError(null)
     try {
-      const data = await api.getProposals(selectedToken.id, filter === 'all' ? undefined : filter)
+      const data = await api.getProposals(selectedToken.tokenId, filter === 'all' ? undefined : filter)
       setProposals(data)
     } catch (e: any) {
       console.error('Failed to fetch proposals:', e)
@@ -38,7 +38,7 @@ export default function GovernancePage() {
   const handleVote = async (proposalId: number, voteFor: boolean) => {
     if (!selectedToken) return
     try {
-      await api.vote(selectedToken.id, proposalId, voteFor)
+      await api.vote(selectedToken.tokenId, proposalId, voteFor)
       fetchProposals()
     } catch (e: any) {
       console.error('Failed to vote:', e)
@@ -49,7 +49,7 @@ export default function GovernancePage() {
   const handleExecute = async (proposalId: number) => {
     if (!selectedToken) return
     try {
-      await api.executeProposal(selectedToken.id, proposalId)
+      await api.executeProposal(selectedToken.tokenId, proposalId)
       fetchProposals()
     } catch (e: any) {
       console.error('Failed to execute proposal:', e)

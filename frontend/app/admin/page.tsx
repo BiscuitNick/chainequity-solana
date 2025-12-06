@@ -21,8 +21,8 @@ export default function AdminPage() {
     setError(null)
     try {
       const [config, txs] = await Promise.all([
-        api.getMultiSigInfo(selectedToken.id),
-        api.getPendingTransactions(selectedToken.id)
+        api.getMultiSigInfo(selectedToken.tokenId),
+        api.getPendingTransactions(selectedToken.tokenId)
       ])
       setMultiSigConfig(config)
       setPendingTxs(txs)
@@ -43,7 +43,7 @@ export default function AdminPage() {
   const handlePauseToggle = async () => {
     if (!selectedToken) return
     try {
-      await api.setPaused(selectedToken.id, !isPaused)
+      await api.setPaused(selectedToken.tokenId, !isPaused)
       setIsPaused(!isPaused)
     } catch (e: any) {
       console.error('Failed to toggle pause:', e)
@@ -54,7 +54,7 @@ export default function AdminPage() {
   const handleApprove = async (txId: string) => {
     if (!selectedToken) return
     try {
-      await api.approveTransaction(selectedToken.id, txId)
+      await api.approveTransaction(selectedToken.tokenId, txId)
       fetchAdminData()
     } catch (e: any) {
       console.error('Failed to approve transaction:', e)
@@ -65,7 +65,7 @@ export default function AdminPage() {
   const handleExecute = async (txId: string) => {
     if (!selectedToken) return
     try {
-      await api.executeTransaction(selectedToken.id, txId)
+      await api.executeTransaction(selectedToken.tokenId, txId)
       fetchAdminData()
     } catch (e: any) {
       console.error('Failed to execute transaction:', e)

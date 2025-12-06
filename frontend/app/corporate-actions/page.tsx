@@ -20,7 +20,7 @@ export default function CorporateActionsPage() {
     setLoading(true)
     setError(null)
     try {
-      const data = await api.getCorporateActions(selectedToken.id)
+      const data = await api.getCorporateActions(selectedToken.tokenId)
       setActions(data)
     } catch (e: any) {
       console.error('Failed to fetch corporate actions:', e)

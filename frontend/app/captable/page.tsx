@@ -18,7 +18,7 @@ export default function CapTablePage() {
     setLoading(true)
     setError(null)
     try {
-      const data = await api.getCapTable(selectedToken.id)
+      const data = await api.getCapTable(selectedToken.tokenId)
       setCapTable(data)
     } catch (e: any) {
       console.error('Failed to fetch cap table:', e)
@@ -32,7 +32,7 @@ export default function CapTablePage() {
   const handleExport = async () => {
     if (!selectedToken) return
     try {
-      const blob = await api.exportCapTable(selectedToken.id, 'csv')
+      const blob = await api.exportCapTable(selectedToken.tokenId, 'csv')
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url

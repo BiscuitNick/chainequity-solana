@@ -20,7 +20,7 @@ export default function AllowlistPage() {
     setLoading(true)
     setError(null)
     try {
-      const data = await api.getAllowlist(selectedToken.id)
+      const data = await api.getAllowlist(selectedToken.tokenId)
       setAllowlist(data)
     } catch (e: any) {
       console.error('Failed to fetch allowlist:', e)

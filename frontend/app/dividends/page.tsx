@@ -19,7 +19,7 @@ export default function DividendsPage() {
     setLoading(true)
     setError(null)
     try {
-      const data = await api.getDividendRounds(selectedToken.id)
+      const data = await api.getDividendRounds(selectedToken.tokenId)
       setDividendRounds(data)
     } catch (e: any) {
       console.error('Failed to fetch dividend rounds:', e)
@@ -37,7 +37,7 @@ export default function DividendsPage() {
   const handleClaim = async (roundId: number) => {
     if (!selectedToken) return
     try {
-      await api.claimDividend(selectedToken.id, roundId)
+      await api.claimDividend(selectedToken.tokenId, roundId)
       fetchDividendRounds()
     } catch (e: any) {
       console.error('Failed to claim dividend:', e)

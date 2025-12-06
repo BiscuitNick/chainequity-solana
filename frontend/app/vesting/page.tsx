@@ -19,7 +19,7 @@ export default function VestingPage() {
     setLoading(true)
     setError(null)
     try {
-      const data = await api.getVestingSchedules(selectedToken.id)
+      const data = await api.getVestingSchedules(selectedToken.tokenId)
       setSchedules(data)
     } catch (e: any) {
       console.error('Failed to fetch vesting schedules:', e)
