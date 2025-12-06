@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Plus, Coins, ExternalLink, RefreshCw } from 'lucide-react'
+import { CreateTokenModal } from '@/components/CreateTokenModal'
 
 interface TokenInfo {
   id: number
@@ -200,6 +201,16 @@ export default function TokensPage() {
         ))}
       </div>
       )}
+
+      {/* Create Token Modal */}
+      <CreateTokenModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSuccess={() => {
+          setShowCreateModal(false)
+          fetchTokens()
+        }}
+      />
     </div>
   )
 }

@@ -164,7 +164,7 @@ async def sync_tokens_from_chain(db: AsyncSession) -> Dict[str, Any]:
 
                 stats['found_on_chain'] += 1
 
-                # Check if token already exists in DB
+                # Check if token already exists in DB by token_id
                 result = await db.execute(
                     select(Token).where(Token.token_id == parsed['token_id'])
                 )
@@ -183,6 +183,22 @@ async def sync_tokens_from_chain(db: AsyncSession) -> Dict[str, Any]:
                     stats['updated'] += 1
                     logger.info(f"Updated token {parsed['symbol']}", token_id=parsed['token_id'])
                 else:
+                    # Check for duplicate symbol before creating
+                    symbol_check = await db.execute(
+                        select(Token).where(Token.symbol == parsed['symbol'])
+                    )
+                    duplicate_symbol = symbol_check.scalar_one_or_none()
+
+                    if duplicate_symbol:
+                        # Skip - symbol already exists with different token_id
+                        stats['skipped'] = stats.get('skipped', 0) + 1
+                        logger.warning(
+                            f"Skipping duplicate symbol {parsed['symbol']}",
+                            new_token_id=parsed['token_id'],
+                            existing_token_id=duplicate_symbol.token_id
+                        )
+                        continue
+
                     # Create new token
                     new_token = Token(
                         token_id=parsed['token_id'],
