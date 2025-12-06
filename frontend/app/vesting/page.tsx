@@ -34,7 +34,13 @@ export default function VestingPage() {
     fetchVestingSchedules()
   }, [selectedToken])
 
-  const statusColors = {
+  const getStatus = (schedule: VestingSchedule) => {
+    if (schedule.is_terminated) return 'terminated'
+    if (schedule.released_amount >= schedule.total_amount) return 'completed'
+    return 'active'
+  }
+
+  const statusColors: Record<string, string> = {
     active: 'bg-green-500/10 text-green-500',
     terminated: 'bg-red-500/10 text-red-500',
     completed: 'bg-blue-500/10 text-blue-500',
@@ -144,7 +150,7 @@ export default function VestingPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {loading ? '...' : schedules.filter(s => s.status === 'active').length}
+              {loading ? '...' : schedules.filter(s => !s.is_terminated).length}
             </div>
             <p className="text-xs text-muted-foreground">beneficiaries</p>
           </CardContent>
@@ -173,8 +179,8 @@ export default function VestingPage() {
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-sm">{schedule.beneficiary}</span>
-                        <span className={`px-2 py-0.5 rounded text-xs capitalize ${statusColors[schedule.status]}`}>
-                          {schedule.status}
+                        <span className={`px-2 py-0.5 rounded text-xs capitalize ${statusColors[getStatus(schedule)]}`}>
+                          {getStatus(schedule)}
                         </span>
                         {schedule.termination_type && (
                           <span className="px-2 py-0.5 bg-orange-500/10 text-orange-500 rounded text-xs">
@@ -211,7 +217,7 @@ export default function VestingPage() {
                       />
                     </div>
                   </div>
-                  {schedule.status === 'active' && (
+                  {!schedule.is_terminated && (
                     <div className="mt-3 flex gap-2">
                       <Button variant="outline" size="sm">Release Vested</Button>
                       <Button variant="outline" size="sm" className="text-red-500">

@@ -175,21 +175,21 @@ class ApiClient {
 
   // Admin endpoints
   async getMultiSigInfo(tokenId: number) {
-    return this.request<MultiSigInfo>(`/tokens/${tokenId}/admin/multisig`)
+    return this.request<MultiSigConfigResponse>(`/tokens/${tokenId}/admin/multisig/config`)
   }
 
   async getPendingTransactions(tokenId: number) {
-    return this.request<PendingTransaction[]>(`/tokens/${tokenId}/admin/transactions`)
+    return this.request<PendingTransactionResponse[]>(`/tokens/${tokenId}/admin/multisig/pending`)
   }
 
-  async approveTransaction(tokenId: number, txId: number) {
-    return this.request<any>(`/tokens/${tokenId}/admin/transactions/${txId}/approve`, {
+  async approveTransaction(tokenId: number, txId: string) {
+    return this.request<any>(`/tokens/${tokenId}/admin/multisig/${txId}/sign`, {
       method: 'POST',
     })
   }
 
-  async executeTransaction(tokenId: number, txId: number) {
-    return this.request<any>(`/tokens/${tokenId}/admin/transactions/${txId}/execute`, {
+  async executeTransaction(tokenId: number, txId: string) {
+    return this.request<any>(`/tokens/${tokenId}/admin/multisig/${txId}/execute`, {
       method: 'POST',
     })
   }
@@ -259,16 +259,28 @@ export interface TokenHolder {
 export interface AllowlistEntry {
   address: string
   kyc_level: number
-  status: 'active' | 'pending' | 'revoked'
-  added_at: string
-  added_by: string
+  status: string
+  approved_at?: string
+  approved_by?: string
+}
+
+export interface CapTableEntry {
+  wallet: string
+  balance: number
+  ownership_pct: number
+  vested: number
+  unvested: number
+  lockout_until?: string
+  daily_limit?: number
+  status: string
 }
 
 export interface CapTableResponse {
+  slot: number
+  timestamp: string
   total_supply: number
   holder_count: number
-  holders: TokenHolder[]
-  ownership_by_type: Record<string, number>
+  holders: CapTableEntry[]
 }
 
 export interface VestingSchedule {
@@ -276,12 +288,15 @@ export interface VestingSchedule {
   beneficiary: string
   total_amount: number
   released_amount: number
+  vested_amount: number
   start_time: string
   cliff_duration: number
   total_duration: number
-  vesting_type: 'linear' | 'cliff_then_linear' | 'stepped'
-  status: 'active' | 'terminated' | 'completed'
-  termination_type?: 'standard' | 'for_cause' | 'accelerated'
+  vesting_type: string
+  revocable: boolean
+  is_terminated: boolean
+  termination_type?: string
+  terminated_at?: string
 }
 
 export interface CreateVestingRequest {
@@ -301,14 +316,16 @@ export interface TerminateVestingRequest {
 
 export interface DividendRound {
   id: number
+  round_number: number
+  payment_token: string
   total_pool: number
   amount_per_share: number
-  payment_token: string
-  status: 'pending' | 'active' | 'completed'
+  snapshot_slot: number
+  status: string
   created_at: string
   expires_at?: string
-  claimed_count: number
-  total_eligible: number
+  total_claimed: number
+  claim_count: number
 }
 
 export interface CreateDividendRequest {
@@ -319,15 +336,21 @@ export interface CreateDividendRequest {
 
 export interface Proposal {
   id: number
-  title: string
-  description: string
+  proposal_number: number
   proposer: string
-  status: 'active' | 'passed' | 'rejected' | 'executed'
+  action_type: string
+  action_data: Record<string, any>
+  description?: string
   votes_for: number
   votes_against: number
-  quorum: number
-  end_date: string
-  execution_deadline?: string
+  votes_abstain: number
+  status: string
+  voting_starts: string
+  voting_ends: string
+  executed_at?: string
+  quorum_reached: boolean
+  approval_reached: boolean
+  can_execute: boolean
 }
 
 export interface CreateProposalRequest {
@@ -338,6 +361,23 @@ export interface CreateProposalRequest {
   voting_period_days: number
 }
 
+export interface MultiSigConfigResponse {
+  signers: string[]
+  threshold: number
+  nonce: number
+}
+
+export interface PendingTransactionResponse {
+  id: string
+  instruction_type: string
+  instruction_data: Record<string, any>
+  signers_approved: string[]
+  signers_pending: string[]
+  created_at: string
+  expires_at?: string
+}
+
+// Legacy types for frontend compatibility
 export interface MultiSigInfo {
   signers: { address: string; name?: string }[]
   threshold: number

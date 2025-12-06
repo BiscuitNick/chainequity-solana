@@ -57,18 +57,22 @@ export default function GovernancePage() {
     }
   }
 
-  const statusIcons = {
+  const statusIcons: Record<string, JSX.Element> = {
+    pending: <Clock className="h-4 w-4 text-gray-500" />,
     active: <Clock className="h-4 w-4 text-yellow-500" />,
     passed: <CheckCircle className="h-4 w-4 text-green-500" />,
-    rejected: <XCircle className="h-4 w-4 text-red-500" />,
+    failed: <XCircle className="h-4 w-4 text-red-500" />,
     executed: <CheckCircle className="h-4 w-4 text-blue-500" />,
+    cancelled: <XCircle className="h-4 w-4 text-gray-500" />,
   }
 
-  const statusColors = {
+  const statusColors: Record<string, string> = {
+    pending: 'bg-gray-500/10 text-gray-500',
     active: 'bg-yellow-500/10 text-yellow-500',
     passed: 'bg-green-500/10 text-green-500',
-    rejected: 'bg-red-500/10 text-red-500',
+    failed: 'bg-red-500/10 text-red-500',
     executed: 'bg-blue-500/10 text-blue-500',
+    cancelled: 'bg-gray-500/10 text-gray-500',
   }
 
   if (!selectedToken) {
@@ -141,7 +145,7 @@ export default function GovernancePage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-500">
-              {loading ? '...' : proposals.filter(p => p.status === 'rejected').length}
+              {loading ? '...' : proposals.filter(p => p.status === 'failed').length}
             </div>
           </CardContent>
         </Card>
@@ -186,27 +190,26 @@ export default function GovernancePage() {
           ) : (
             <div className="space-y-4">
               {proposals.map((proposal) => {
-                const totalVotes = proposal.votes_for + proposal.votes_against
+                const totalVotes = proposal.votes_for + proposal.votes_against + proposal.votes_abstain
                 const forPercentage = totalVotes > 0 ? (proposal.votes_for / totalVotes) * 100 : 0
-                const quorumReached = totalVotes >= proposal.quorum
 
                 return (
                   <div key={proposal.id} className="border rounded-lg p-4">
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          {statusIcons[proposal.status]}
-                          <h3 className="font-semibold">{proposal.title}</h3>
+                          {statusIcons[proposal.status] || <Clock className="h-4 w-4" />}
+                          <h3 className="font-semibold">Proposal #{proposal.proposal_number}: {proposal.action_type}</h3>
                           <span className={`px-2 py-0.5 rounded text-xs capitalize ${statusColors[proposal.status]}`}>
                             {proposal.status}
                           </span>
                         </div>
-                        <p className="text-sm text-muted-foreground mt-1">{proposal.description}</p>
+                        <p className="text-sm text-muted-foreground mt-1">{proposal.description || JSON.stringify(proposal.action_data)}</p>
                         <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                          <span>Proposed by: {proposal.proposer}</span>
-                          <span>Ends: {proposal.end_date}</span>
-                          {proposal.execution_deadline && (
-                            <span>Execute by: {proposal.execution_deadline}</span>
+                          <span>Proposed by: {proposal.proposer.slice(0, 4)}...{proposal.proposer.slice(-4)}</span>
+                          <span>Ends: {new Date(proposal.voting_ends).toLocaleDateString()}</span>
+                          {proposal.executed_at && (
+                            <span>Executed: {new Date(proposal.executed_at).toLocaleDateString()}</span>
                           )}
                         </div>
                       </div>
@@ -235,8 +238,8 @@ export default function GovernancePage() {
                       </div>
                       <div className="flex justify-between mt-1 text-xs text-muted-foreground">
                         <span>Total votes: {totalVotes.toLocaleString()}</span>
-                        <span className={quorumReached ? 'text-green-500' : 'text-yellow-500'}>
-                          Quorum: {quorumReached ? 'Reached' : `${proposal.quorum > 0 ? ((totalVotes / proposal.quorum) * 100).toFixed(0) : 0}%`}
+                        <span className={proposal.quorum_reached ? 'text-green-500' : 'text-yellow-500'}>
+                          Quorum: {proposal.quorum_reached ? 'Reached' : 'Not reached'}
                         </span>
                       </div>
                     </div>
@@ -263,7 +266,7 @@ export default function GovernancePage() {
                       </div>
                     )}
 
-                    {proposal.status === 'passed' && (
+                    {proposal.can_execute && (
                       <div className="mt-4">
                         <Button size="sm" onClick={() => handleExecute(proposal.id)}>
                           Execute Proposal

@@ -45,10 +45,11 @@ export default function DividendsPage() {
     }
   }
 
-  const statusColors = {
+  const statusColors: Record<string, string> = {
     pending: 'bg-yellow-500/10 text-yellow-500',
     active: 'bg-green-500/10 text-green-500',
     completed: 'bg-blue-500/10 text-blue-500',
+    expired: 'bg-gray-500/10 text-gray-500',
   }
 
   const totalDistributed = dividendRounds.reduce((sum, r) => sum + r.total_pool, 0)
@@ -125,7 +126,7 @@ export default function DividendsPage() {
               {loading ? '...' : activeRound ? `$${activeRound.total_pool.toLocaleString()}` : 'None'}
             </div>
             <p className="text-xs text-muted-foreground">
-              {activeRound ? `${activeRound.claimed_count}/${activeRound.total_eligible} claimed` : '—'}
+              {activeRound ? `${activeRound.claim_count} claimed` : '—'}
             </p>
           </CardContent>
         </Card>
@@ -175,13 +176,13 @@ export default function DividendsPage() {
             </div>
             <div className="mt-4">
               <div className="flex justify-between text-sm mb-1">
-                <span>Claims progress</span>
-                <span>{activeRound.claimed_count} / {activeRound.total_eligible}</span>
+                <span>Total Claimed</span>
+                <span>{activeRound.total_claimed.toLocaleString()} ({activeRound.claim_count} claims)</span>
               </div>
               <div className="w-full bg-muted rounded-full h-2">
                 <div
                   className="bg-green-500 h-2 rounded-full transition-all"
-                  style={{ width: `${activeRound.total_eligible > 0 ? (activeRound.claimed_count / activeRound.total_eligible) * 100 : 0}%` }}
+                  style={{ width: `${activeRound.total_pool > 0 ? (activeRound.total_claimed / activeRound.total_pool) * 100 : 0}%` }}
                 />
               </div>
             </div>
@@ -236,7 +237,7 @@ export default function DividendsPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4">
-                        {round.claimed_count} / {round.total_eligible}
+                        {round.claim_count} ({round.total_claimed.toLocaleString()})
                       </td>
                       <td className="py-3 px-4 text-muted-foreground">{round.created_at}</td>
                     </tr>

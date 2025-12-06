@@ -5,13 +5,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/useAppStore'
 import { Shield, Users, Pause, Play, AlertTriangle, Key, RefreshCw } from 'lucide-react'
-import { api, MultiSigInfo, PendingTransaction } from '@/lib/api'
+import { api, MultiSigConfigResponse, PendingTransactionResponse } from '@/lib/api'
 
 export default function AdminPage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
   const [isPaused, setIsPaused] = useState(false)
-  const [multiSigInfo, setMultiSigInfo] = useState<MultiSigInfo | null>(null)
-  const [pendingTxs, setPendingTxs] = useState<PendingTransaction[]>([])
+  const [multiSigConfig, setMultiSigConfig] = useState<MultiSigConfigResponse | null>(null)
+  const [pendingTxs, setPendingTxs] = useState<PendingTransactionResponse[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -20,16 +20,16 @@ export default function AdminPage() {
     setLoading(true)
     setError(null)
     try {
-      const [multiSig, txs] = await Promise.all([
+      const [config, txs] = await Promise.all([
         api.getMultiSigInfo(selectedToken.id),
         api.getPendingTransactions(selectedToken.id)
       ])
-      setMultiSigInfo(multiSig)
+      setMultiSigConfig(config)
       setPendingTxs(txs)
     } catch (e: any) {
       console.error('Failed to fetch admin data:', e)
       setError(e.detail || 'Failed to fetch admin data')
-      setMultiSigInfo(null)
+      setMultiSigConfig(null)
       setPendingTxs([])
     } finally {
       setLoading(false)
@@ -51,7 +51,7 @@ export default function AdminPage() {
     }
   }
 
-  const handleApprove = async (txId: number) => {
+  const handleApprove = async (txId: string) => {
     if (!selectedToken) return
     try {
       await api.approveTransaction(selectedToken.id, txId)
@@ -62,7 +62,7 @@ export default function AdminPage() {
     }
   }
 
-  const handleExecute = async (txId: number) => {
+  const handleExecute = async (txId: string) => {
     if (!selectedToken) return
     try {
       await api.executeTransaction(selectedToken.id, txId)
@@ -87,8 +87,8 @@ export default function AdminPage() {
     )
   }
 
-  const signers = multiSigInfo?.signers || []
-  const threshold = multiSigInfo?.threshold || 0
+  const signers = multiSigConfig?.signers || []
+  const threshold = multiSigConfig?.threshold || 0
 
   return (
     <div className="space-y-6">
@@ -197,10 +197,7 @@ export default function AdminPage() {
                 <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
                   <div className="flex items-center gap-3">
                     <div className="w-2 h-2 rounded-full bg-green-500" />
-                    <div>
-                      <p className="font-mono text-sm">{signer.address}</p>
-                      {signer.name && <p className="text-xs text-muted-foreground">{signer.name}</p>}
-                    </div>
+                    <p className="font-mono text-sm">{signer}</p>
                   </div>
                   <Button variant="ghost" size="sm" className="text-red-500">
                     Remove
@@ -239,26 +236,27 @@ export default function AdminPage() {
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="px-2 py-1 bg-blue-500/10 text-blue-500 rounded text-xs">
-                          {tx.type}
+                          {tx.instruction_type}
                         </span>
-                        <span className="text-sm font-medium">Transaction #{tx.id}</span>
+                        <span className="text-sm font-medium">Transaction #{tx.id.slice(0, 8)}...</span>
                       </div>
-                      <p className="text-sm mt-1">{tx.description}</p>
+                      <p className="text-sm mt-1 text-muted-foreground">
+                        {JSON.stringify(tx.instruction_data).slice(0, 100)}...
+                      </p>
                       <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                        <span>Proposed by: {tx.proposed_by}</span>
-                        <span>{tx.proposed_at}</span>
-                        {tx.deadline && <span className="text-yellow-500">Deadline: {tx.deadline}</span>}
+                        <span>Created: {new Date(tx.created_at).toLocaleDateString()}</span>
+                        {tx.expires_at && <span className="text-yellow-500">Expires: {new Date(tx.expires_at).toLocaleDateString()}</span>}
                       </div>
                     </div>
                     <div className="text-right">
                       <p className="text-lg font-bold">
-                        {tx.approvals} / {tx.threshold}
+                        {tx.signers_approved.length} / {threshold}
                       </p>
                       <p className="text-xs text-muted-foreground">approvals</p>
                     </div>
                   </div>
                   <div className="mt-3 flex gap-2">
-                    {tx.approvals < tx.threshold ? (
+                    {tx.signers_approved.length < threshold ? (
                       <>
                         <Button
                           size="sm"
