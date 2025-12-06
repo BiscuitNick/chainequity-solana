@@ -4,31 +4,48 @@ A technical prototype demonstrating tokenized securities on Solana with complian
 
 **DISCLAIMER: This is a prototype for educational and demonstration purposes only. NOT for production use.**
 
+## Overview
+
+ChainEquity is a full-stack application for managing tokenized securities on Solana. It provides:
+
+- **4 Solana Programs** - Token factory, compliance-gated transfers, governance, and test stablecoin
+- **Python Backend** - FastAPI with real-time indexer and WebSocket support
+- **React Frontend** - Next.js 14 with complete operator dashboard
+- **~31,000 lines of code** across Rust, Python, and TypeScript
+
 ## Features
 
 ### Core Features
 - **Token Factory**: Create multiple security tokens with configurable features
-- **Gated Transfers**: Allowlist-based transfer restrictions
+- **Gated Transfers**: Allowlist-based transfer restrictions with KYC levels
 - **Multi-Sig Admin**: M-of-N signature requirements for sensitive operations
-- **Stock Splits**: On-chain 7-for-1 (or configurable) splits
-- **Symbol Changes**: Mutable token metadata
+- **Stock Splits**: On-chain configurable splits (e.g., 7-for-1)
+- **Symbol Changes**: Mutable token metadata via Token-2022
 
 ### Advanced Features
 - **Vesting Schedules**: Linear, cliff, and stepped vesting with 3 termination types
 - **Dividend Distribution**: Pull-based claims with TestUSDC
 - **On-Chain Governance**: Proposals, voting, and execution
 - **Cap-Table Export**: CSV, JSON, and PDF formats
+- **Real-Time Updates**: WebSocket subscriptions for transfers, votes, and more
+
+## Documentation
+
+- [API Documentation](docs/API.md) - Complete REST API reference
+- [Product Requirements](docs/chainequity-prd-v1.5.md) - Detailed PRD
+- [Deployment Guide](docs/DEPLOYMENT.md) - Production deployment instructions
 
 ## Tech Stack
 
 | Component | Technology |
 |-----------|------------|
 | Blockchain | Solana Devnet |
-| Smart Contracts | Rust + Anchor Framework |
+| Smart Contracts | Rust + Anchor Framework (4 programs) |
 | Backend API | Python + FastAPI + anchorpy |
-| Database | PostgreSQL |
+| Database | PostgreSQL + SQLAlchemy |
 | Frontend | Next.js 14 + shadcn/ui + Tailwind |
-| Testing | Rust unit tests, pytest, Playwright |
+| State Management | Zustand |
+| Testing | Anchor tests, pytest, Playwright |
 
 ## Quick Start
 
