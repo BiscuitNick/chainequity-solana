@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     factory_program_id: str = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
     token_program_id: str = "HmbTLCmaGvZhKnn1Zfa1JVnp7vkMV4DYVxPLWBVoN65L"
     governance_program_id: str = "BPFLoaderUpgradeab1e11111111111111111111111"
+    test_usdc_program_id: str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
 
     # Indexer
     indexer_poll_interval: int = 5  # seconds

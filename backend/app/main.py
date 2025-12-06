@@ -1,4 +1,5 @@
 """ChainEquity Backend API - Main Application"""
+import asyncio
 import structlog
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -8,6 +9,8 @@ from app.config import get_settings
 from app.api.v1.router import api_router
 from app.api.websocket import websocket_router
 from app.models.database import init_db, close_db
+from app.services.indexer import start_indexer, stop_indexer
+from app.services.solana_client import close_solana_client
 
 # Configure structured logging
 structlog.configure(
@@ -41,12 +44,15 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
 
-    # TODO: Start indexer background task
-    # asyncio.create_task(start_indexer())
+    # Start indexer background task
+    await start_indexer()
+    logger.info("Transaction indexer started")
 
     yield
 
     # Cleanup
+    await stop_indexer()
+    await close_solana_client()
     await close_db()
     logger.info("ChainEquity API shutdown complete")
 
