@@ -70,7 +70,7 @@ export function useTokens() {
 export function useTokenInfo(tokenId: number | null) {
   return useApiCall<TokenInfoResponse | null>(
     async () => {
-      if (!tokenId) return null
+      if (tokenId === null || tokenId === undefined) return null
       return api.getTokenInfo(tokenId)
     },
     [tokenId]
@@ -80,7 +80,7 @@ export function useTokenInfo(tokenId: number | null) {
 export function useBalance(tokenId: number | null, address: string | null) {
   return useApiCall<BalanceResponse | null>(
     async () => {
-      if (!tokenId || !address) return null
+      if (tokenId === null || tokenId === undefined || !address) return null
       return api.getBalance(tokenId, address)
     },
     [tokenId, address]
@@ -90,7 +90,7 @@ export function useBalance(tokenId: number | null, address: string | null) {
 export function useHolders(tokenId: number | null) {
   return useApiCall<TokenHolder[]>(
     async () => {
-      if (!tokenId) return []
+      if (tokenId === null || tokenId === undefined) return []
       return api.getHolders(tokenId)
     },
     [tokenId]
@@ -101,7 +101,7 @@ export function useHolders(tokenId: number | null) {
 export function useAllowlist(tokenId: number | null) {
   return useApiCall<AllowlistEntry[]>(
     async () => {
-      if (!tokenId) return []
+      if (tokenId === null || tokenId === undefined) return []
       return api.getAllowlist(tokenId)
     },
     [tokenId]
@@ -113,7 +113,7 @@ export function useAddToAllowlist(tokenId: number | null) {
   const [error, setError] = useState<string | null>(null)
 
   const addToAllowlist = async (address: string, kycLevel: number) => {
-    if (!tokenId) return null
+    if (tokenId === null || tokenId === undefined) return null
     setLoading(true)
     setError(null)
     try {
@@ -134,7 +134,7 @@ export function useAddToAllowlist(tokenId: number | null) {
 export function useVestingSchedules(tokenId: number | null) {
   return useApiCall<VestingSchedule[]>(
     async () => {
-      if (!tokenId) return []
+      if (tokenId === null || tokenId === undefined) return []
       return api.getVestingSchedules(tokenId)
     },
     [tokenId]
@@ -146,7 +146,7 @@ export function useReleaseVesting(tokenId: number | null) {
   const [error, setError] = useState<string | null>(null)
 
   const releaseVesting = async (scheduleId: string) => {
-    if (!tokenId) return null
+    if (tokenId === null || tokenId === undefined) return null
     setLoading(true)
     setError(null)
     try {
@@ -167,7 +167,7 @@ export function useReleaseVesting(tokenId: number | null) {
 export function useDividendRounds(tokenId: number | null) {
   return useApiCall<DividendRound[]>(
     async () => {
-      if (!tokenId) return []
+      if (tokenId === null || tokenId === undefined) return []
       return api.getDividendRounds(tokenId)
     },
     [tokenId]
@@ -179,7 +179,7 @@ export function useClaimDividend(tokenId: number | null) {
   const [error, setError] = useState<string | null>(null)
 
   const claimDividend = async (roundId: number) => {
-    if (!tokenId) return null
+    if (tokenId === null || tokenId === undefined) return null
     setLoading(true)
     setError(null)
     try {
@@ -200,7 +200,7 @@ export function useClaimDividend(tokenId: number | null) {
 export function useProposals(tokenId: number | null, status?: string) {
   return useApiCall<Proposal[]>(
     async () => {
-      if (!tokenId) return []
+      if (tokenId === null || tokenId === undefined) return []
       return api.getProposals(tokenId, status)
     },
     [tokenId, status]
@@ -212,7 +212,7 @@ export function useVote(tokenId: number | null) {
   const [error, setError] = useState<string | null>(null)
 
   const vote = async (proposalId: number, voteFor: boolean) => {
-    if (!tokenId) return null
+    if (tokenId === null || tokenId === undefined) return null
     setLoading(true)
     setError(null)
     try {
@@ -233,7 +233,7 @@ export function useVote(tokenId: number | null) {
 export function useMultiSigInfo(tokenId: number | null) {
   return useApiCall<MultiSigInfo | null>(
     async () => {
-      if (!tokenId) return null
+      if (tokenId === null || tokenId === undefined) return null
       return api.getMultiSigInfo(tokenId)
     },
     [tokenId]
@@ -243,7 +243,7 @@ export function useMultiSigInfo(tokenId: number | null) {
 export function usePendingTransactions(tokenId: number | null) {
   return useApiCall<PendingTransaction[]>(
     async () => {
-      if (!tokenId) return []
+      if (tokenId === null || tokenId === undefined) return []
       return api.getPendingTransactions(tokenId)
     },
     [tokenId]
@@ -255,7 +255,7 @@ export function useApproveTransaction(tokenId: number | null) {
   const [error, setError] = useState<string | null>(null)
 
   const approve = async (txId: number) => {
-    if (!tokenId) return null
+    if (tokenId === null || tokenId === undefined) return null
     setLoading(true)
     setError(null)
     try {

@@ -60,6 +60,62 @@ async def list_issuances(
     return [_issuance_to_response(i) for i in issuances]
 
 
+@router.get("/recent", response_model=List[TokenIssuanceResponse])
+async def get_recent_issuances(
+    token_id: int = Path(...),
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get most recent issuances for a token (for dashboard)"""
+    result = await db.execute(
+        select(TokenIssuance)
+        .where(TokenIssuance.token_id == token_id)
+        .order_by(TokenIssuance.created_at.desc())
+        .limit(limit)
+    )
+    issuances = result.scalars().all()
+
+    return [_issuance_to_response(i) for i in issuances]
+
+
+@router.get("/stats")
+async def get_issuance_stats(
+    token_id: int = Path(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get issuance statistics for a token"""
+    from sqlalchemy import func, and_
+    from datetime import timedelta
+
+    # Get total issuances
+    total_result = await db.execute(
+        select(func.count()).select_from(TokenIssuance).where(TokenIssuance.token_id == token_id)
+    )
+    total_issuances = total_result.scalar() or 0
+
+    # Get 24h stats
+    yesterday = datetime.utcnow() - timedelta(hours=24)
+    stats_24h = await db.execute(
+        select(func.count(), func.coalesce(func.sum(TokenIssuance.amount), 0))
+        .select_from(TokenIssuance)
+        .where(
+            and_(
+                TokenIssuance.token_id == token_id,
+                TokenIssuance.created_at >= yesterday,
+            )
+        )
+    )
+    row = stats_24h.one()
+    issuances_24h = row[0] or 0
+    volume_24h = row[1] or 0
+
+    return {
+        "total_issuances": total_issuances,
+        "issuances_24h": issuances_24h,
+        "volume_24h": volume_24h,
+    }
+
+
 @router.get("/wallet/{address}", response_model=List[TokenIssuanceResponse])
 async def get_wallet_issuances(
     token_id: int = Path(...),

@@ -11,7 +11,8 @@ interface TokenInfo {
   symbol: string
   name: string
   mintAddress: string
-  totalSupply: number
+  authorizedSupply: number
+  issuedSupply: number
   decimals: number
   holders: number
   isPaused: boolean
@@ -41,18 +42,36 @@ export default function TokensPage() {
 
       if (response.ok) {
         const data = await response.json()
-        // API worked - use the data (even if empty)
-        setTokens(data.map((t: any) => ({
-          id: t.token_id,
-          symbol: t.symbol,
-          name: t.name,
-          mintAddress: t.mint_address,
-          totalSupply: parseInt(t.total_supply) / Math.pow(10, t.decimals || 6),
-          decimals: t.decimals || 6,
-          holders: 0, // Would need separate query
-          isPaused: t.is_paused,
-          createdAt: t.created_at,
-        })))
+        // Fetch cap table data for each token to get issued supply and holder count
+        const tokensWithCapTable = await Promise.all(
+          data.map(async (t: any) => {
+            let issuedSupply = 0
+            let holders = 0
+            try {
+              const capTableRes = await fetch(`${apiUrl}/tokens/${t.token_id}/captable`)
+              if (capTableRes.ok) {
+                const capTable = await capTableRes.json()
+                issuedSupply = capTable.total_supply || 0
+                holders = capTable.holder_count || 0
+              }
+            } catch (e) {
+              console.error(`Failed to fetch cap table for token ${t.token_id}:`, e)
+            }
+            return {
+              id: t.token_id,
+              symbol: t.symbol,
+              name: t.name,
+              mintAddress: t.mint_address,
+              authorizedSupply: parseInt(t.total_supply),
+              issuedSupply,
+              decimals: t.decimals || 6,
+              holders,
+              isPaused: t.is_paused,
+              createdAt: t.created_at,
+            }
+          })
+        )
+        setTokens(tokensWithCapTable)
         setLoading(false)
         return
       }
@@ -113,13 +132,13 @@ export default function TokensPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Supply</CardTitle>
+            <CardTitle className="text-sm font-medium">Issued Supply</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {loading ? '...' : tokens.reduce((sum, t) => sum + t.totalSupply, 0).toLocaleString()}
+              {loading ? '...' : tokens.reduce((sum, t) => sum + t.issuedSupply, 0).toLocaleString()}
             </div>
-            <p className="text-xs text-muted-foreground">combined shares</p>
+            <p className="text-xs text-muted-foreground">total minted shares</p>
           </CardContent>
         </Card>
         <Card>
@@ -178,16 +197,16 @@ export default function TokensPage() {
             <CardContent>
               <div className="grid grid-cols-3 gap-4 text-sm">
                 <div>
-                  <p className="text-muted-foreground">Total Supply</p>
-                  <p className="font-medium">{token.totalSupply.toLocaleString()}</p>
+                  <p className="text-muted-foreground">Issued</p>
+                  <p className="font-medium">{token.issuedSupply.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Authorized</p>
+                  <p className="font-medium">{token.authorizedSupply.toLocaleString()}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Holders</p>
                   <p className="font-medium">{token.holders}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Created</p>
-                  <p className="font-medium">{token.createdAt}</p>
                 </div>
               </div>
               <div className="mt-4 flex items-center justify-between">

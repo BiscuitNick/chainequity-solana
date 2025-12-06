@@ -123,6 +123,14 @@ class ApiClient {
     return this.request<TokenIssuance[]>(`/tokens/${tokenId}/issuance`)
   }
 
+  async getRecentIssuances(tokenId: number, limit = 10) {
+    return this.request<TokenIssuance[]>(`/tokens/${tokenId}/issuance/recent?limit=${limit}`)
+  }
+
+  async getIssuanceStats(tokenId: number) {
+    return this.request<IssuanceStatsResponse>(`/tokens/${tokenId}/issuance/stats`)
+  }
+
   async issueTokens(tokenId: number, data: IssueTokensRequest) {
     return this.request<IssueTokensResponse>(`/tokens/${tokenId}/issuance`, {
       method: 'POST',
@@ -145,6 +153,19 @@ class ApiClient {
   async exportCapTable(tokenId: number, format: 'csv' | 'pdf' = 'csv') {
     const response = await fetch(`${this.baseUrl}/tokens/${tokenId}/captable/export?format=${format}`)
     return response.blob()
+  }
+
+  // Transfer endpoints
+  async getTransfers(tokenId: number, skip = 0, limit = 50) {
+    return this.request<TransferListResponse>(`/tokens/${tokenId}/transfers?skip=${skip}&limit=${limit}`)
+  }
+
+  async getTransferStats(tokenId: number) {
+    return this.request<TransferStatsResponse>(`/tokens/${tokenId}/transfers/stats`)
+  }
+
+  async getRecentTransfers(tokenId: number, limit = 10) {
+    return this.request<Transfer[]>(`/tokens/${tokenId}/transfers/recent?limit=${limit}`)
   }
 
   // Vesting endpoints
@@ -357,6 +378,38 @@ export interface CapTableResponse {
   total_supply: number
   holder_count: number
   holders: CapTableEntry[]
+}
+
+export interface Transfer {
+  id: number
+  signature: string
+  from_wallet: string
+  to_wallet: string
+  amount: number
+  slot: number
+  block_time: string
+  status: string
+  failure_reason?: string
+  created_at: string
+}
+
+export interface TransferListResponse {
+  transfers: Transfer[]
+  total: number
+  skip: number
+  limit: number
+}
+
+export interface TransferStatsResponse {
+  total_transfers: number
+  transfers_24h: number
+  volume_24h: number
+}
+
+export interface IssuanceStatsResponse {
+  total_issuances: number
+  issuances_24h: number
+  volume_24h: number
 }
 
 export interface VestingSchedule {
