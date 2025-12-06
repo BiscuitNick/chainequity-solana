@@ -200,6 +200,25 @@ class ApiClient {
       body: JSON.stringify({ paused }),
     })
   }
+
+  // Corporate Actions endpoints
+  async getCorporateActions(tokenId: number) {
+    return this.request<CorporateAction[]>(`/tokens/${tokenId}/admin/corporate-actions`)
+  }
+
+  async executeStockSplit(tokenId: number, data: { numerator: number; denominator: number }) {
+    return this.request<any>(`/tokens/${tokenId}/admin/stock-split`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async changeSymbol(tokenId: number, newSymbol: string) {
+    return this.request<any>(`/tokens/${tokenId}/admin/change-symbol`, {
+      method: 'POST',
+      body: JSON.stringify({ new_symbol: newSymbol }),
+    })
+  }
 }
 
 // Types
@@ -334,6 +353,16 @@ export interface PendingTransaction {
   proposed_by: string
   proposed_at: string
   deadline?: string
+}
+
+export interface CorporateAction {
+  id: number
+  action_type: 'stock_split' | 'reverse_split' | 'symbol_change'
+  action_data: Record<string, any>
+  executed_at: string
+  executed_by: string
+  signature?: string
+  slot?: number
 }
 
 // Export singleton instance

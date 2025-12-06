@@ -1,60 +1,77 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/useAppStore'
-import { Shield, Users, Pause, Play, AlertTriangle, Key } from 'lucide-react'
-
-interface MultiSigSigner {
-  address: string
-  name?: string
-  isActive: boolean
-}
-
-interface PendingTransaction {
-  id: number
-  type: string
-  description: string
-  approvals: number
-  threshold: number
-  proposedBy: string
-  proposedAt: string
-  deadline?: string
-}
-
-// Mock data
-const mockSigners: MultiSigSigner[] = [
-  { address: 'Hk4M...8xYq', name: 'CEO', isActive: true },
-  { address: 'Jm2N...9zWr', name: 'CFO', isActive: true },
-  { address: 'Lp5Q...3vTs', name: 'Legal', isActive: true },
-]
-
-const mockPendingTxs: PendingTransaction[] = [
-  {
-    id: 1,
-    type: 'AllowlistAdd',
-    description: 'Add Nq7R...6uUv to allowlist with KYC Tier 2',
-    approvals: 1,
-    threshold: 2,
-    proposedBy: 'Hk4M...8xYq',
-    proposedAt: '2024-01-16 10:30',
-    deadline: '2024-01-23',
-  },
-  {
-    id: 2,
-    type: 'TerminateVesting',
-    description: 'Terminate vesting for Ps9T...2wXy (Standard)',
-    approvals: 2,
-    threshold: 2,
-    proposedBy: 'Jm2N...9zWr',
-    proposedAt: '2024-01-15 14:00',
-  },
-]
+import { Shield, Users, Pause, Play, AlertTriangle, Key, RefreshCw } from 'lucide-react'
+import { api, MultiSigInfo, PendingTransaction } from '@/lib/api'
 
 export default function AdminPage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
   const [isPaused, setIsPaused] = useState(false)
+  const [multiSigInfo, setMultiSigInfo] = useState<MultiSigInfo | null>(null)
+  const [pendingTxs, setPendingTxs] = useState<PendingTransaction[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchAdminData = async () => {
+    if (!selectedToken) return
+    setLoading(true)
+    setError(null)
+    try {
+      const [multiSig, txs] = await Promise.all([
+        api.getMultiSigInfo(selectedToken.id),
+        api.getPendingTransactions(selectedToken.id)
+      ])
+      setMultiSigInfo(multiSig)
+      setPendingTxs(txs)
+    } catch (e: any) {
+      console.error('Failed to fetch admin data:', e)
+      setError(e.detail || 'Failed to fetch admin data')
+      setMultiSigInfo(null)
+      setPendingTxs([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchAdminData()
+  }, [selectedToken])
+
+  const handlePauseToggle = async () => {
+    if (!selectedToken) return
+    try {
+      await api.setPaused(selectedToken.id, !isPaused)
+      setIsPaused(!isPaused)
+    } catch (e: any) {
+      console.error('Failed to toggle pause:', e)
+      setError(e.detail || 'Failed to toggle pause state')
+    }
+  }
+
+  const handleApprove = async (txId: number) => {
+    if (!selectedToken) return
+    try {
+      await api.approveTransaction(selectedToken.id, txId)
+      fetchAdminData()
+    } catch (e: any) {
+      console.error('Failed to approve transaction:', e)
+      setError(e.detail || 'Failed to approve transaction')
+    }
+  }
+
+  const handleExecute = async (txId: number) => {
+    if (!selectedToken) return
+    try {
+      await api.executeTransaction(selectedToken.id, txId)
+      fetchAdminData()
+    } catch (e: any) {
+      console.error('Failed to execute transaction:', e)
+      setError(e.detail || 'Failed to execute transaction')
+    }
+  }
 
   if (!selectedToken) {
     return (
@@ -70,6 +87,9 @@ export default function AdminPage() {
     )
   }
 
+  const signers = multiSigInfo?.signers || []
+  const threshold = multiSigInfo?.threshold || 0
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -79,23 +99,37 @@ export default function AdminPage() {
             Administrative controls for {selectedToken.symbol}
           </p>
         </div>
-        <Button
-          variant={isPaused ? 'default' : 'destructive'}
-          onClick={() => setIsPaused(!isPaused)}
-        >
-          {isPaused ? (
-            <>
-              <Play className="h-4 w-4 mr-2" />
-              Resume Trading
-            </>
-          ) : (
-            <>
-              <Pause className="h-4 w-4 mr-2" />
-              Pause Trading
-            </>
-          )}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={fetchAdminData} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button
+            variant={isPaused ? 'default' : 'destructive'}
+            onClick={handlePauseToggle}
+          >
+            {isPaused ? (
+              <>
+                <Play className="h-4 w-4 mr-2" />
+                Resume Trading
+              </>
+            ) : (
+              <>
+                <Pause className="h-4 w-4 mr-2" />
+                Pause Trading
+              </>
+            )}
+          </Button>
+        </div>
       </div>
+
+      {error && (
+        <Card className="border-red-500/50 bg-red-500/10">
+          <CardContent className="pt-4">
+            <p className="text-red-500">{error}</p>
+          </CardContent>
+        </Card>
+      )}
 
       {isPaused && (
         <Card className="border-red-500 bg-red-500/10">
@@ -114,7 +148,9 @@ export default function AdminPage() {
             <CardTitle className="text-sm font-medium">Multi-Sig Threshold</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">2 of 3</div>
+            <div className="text-2xl font-bold">
+              {loading ? '...' : `${threshold} of ${signers.length}`}
+            </div>
             <p className="text-xs text-muted-foreground">required signatures</p>
           </CardContent>
         </Card>
@@ -123,7 +159,7 @@ export default function AdminPage() {
             <CardTitle className="text-sm font-medium">Pending Transactions</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{mockPendingTxs.length}</div>
+            <div className="text-2xl font-bold">{loading ? '...' : pendingTxs.length}</div>
             <p className="text-xs text-muted-foreground">awaiting approval</p>
           </CardContent>
         </Card>
@@ -132,7 +168,7 @@ export default function AdminPage() {
             <CardTitle className="text-sm font-medium">Active Signers</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{mockSigners.filter(s => s.isActive).length}</div>
+            <div className="text-2xl font-bold">{loading ? '...' : signers.length}</div>
             <p className="text-xs text-muted-foreground">can approve transactions</p>
           </CardContent>
         </Card>
@@ -147,22 +183,32 @@ export default function AdminPage() {
           <CardDescription>Wallets that can approve administrative transactions</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {mockSigners.map((signer, idx) => (
-              <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className={`w-2 h-2 rounded-full ${signer.isActive ? 'bg-green-500' : 'bg-gray-500'}`} />
-                  <div>
-                    <p className="font-mono text-sm">{signer.address}</p>
-                    {signer.name && <p className="text-xs text-muted-foreground">{signer.name}</p>}
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : signers.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">
+              No signers configured
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {signers.map((signer, idx) => (
+                <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-2 h-2 rounded-full bg-green-500" />
+                    <div>
+                      <p className="font-mono text-sm">{signer.address}</p>
+                      {signer.name && <p className="text-xs text-muted-foreground">{signer.name}</p>}
+                    </div>
                   </div>
+                  <Button variant="ghost" size="sm" className="text-red-500">
+                    Remove
+                  </Button>
                 </div>
-                <Button variant="ghost" size="sm" className="text-red-500">
-                  Remove
-                </Button>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
           <Button variant="outline" className="mt-4">
             <Users className="h-4 w-4 mr-2" />
             Add Signer
@@ -179,11 +225,15 @@ export default function AdminPage() {
           <CardDescription>Transactions awaiting multi-sig approval</CardDescription>
         </CardHeader>
         <CardContent>
-          {mockPendingTxs.length === 0 ? (
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : pendingTxs.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">No pending transactions</p>
           ) : (
             <div className="space-y-4">
-              {mockPendingTxs.map((tx) => (
+              {pendingTxs.map((tx) => (
                 <div key={tx.id} className="border rounded-lg p-4">
                   <div className="flex justify-between items-start">
                     <div>
@@ -195,8 +245,8 @@ export default function AdminPage() {
                       </div>
                       <p className="text-sm mt-1">{tx.description}</p>
                       <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                        <span>Proposed by: {tx.proposedBy}</span>
-                        <span>{tx.proposedAt}</span>
+                        <span>Proposed by: {tx.proposed_by}</span>
+                        <span>{tx.proposed_at}</span>
                         {tx.deadline && <span className="text-yellow-500">Deadline: {tx.deadline}</span>}
                       </div>
                     </div>
@@ -210,7 +260,11 @@ export default function AdminPage() {
                   <div className="mt-3 flex gap-2">
                     {tx.approvals < tx.threshold ? (
                       <>
-                        <Button size="sm" className="bg-green-500 hover:bg-green-600">
+                        <Button
+                          size="sm"
+                          className="bg-green-500 hover:bg-green-600"
+                          onClick={() => handleApprove(tx.id)}
+                        >
                           Approve
                         </Button>
                         <Button size="sm" variant="outline" className="text-red-500">
@@ -218,7 +272,9 @@ export default function AdminPage() {
                         </Button>
                       </>
                     ) : (
-                      <Button size="sm">Execute Transaction</Button>
+                      <Button size="sm" onClick={() => handleExecute(tx.id)}>
+                        Execute Transaction
+                      </Button>
                     )}
                   </div>
                 </div>

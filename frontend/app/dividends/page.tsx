@@ -1,76 +1,49 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/useAppStore'
-import { Plus, DollarSign, Users, Clock, CheckCircle } from 'lucide-react'
-
-interface DividendRound {
-  id: number
-  totalPool: number
-  amountPerShare: number
-  paymentToken: string
-  snapshotSlot: number
-  status: 'pending' | 'active' | 'completed'
-  createdAt: string
-  expiresAt?: string
-  claimedCount: number
-  totalEligible: number
-}
-
-// Mock data for demonstration
-const mockDividendRounds: DividendRound[] = [
-  {
-    id: 4,
-    totalPool: 50000,
-    amountPerShare: 0.50,
-    paymentToken: 'USDC',
-    snapshotSlot: 245678901,
-    status: 'active',
-    createdAt: '2024-01-15',
-    expiresAt: '2024-04-15',
-    claimedCount: 45,
-    totalEligible: 120,
-  },
-  {
-    id: 3,
-    totalPool: 45000,
-    amountPerShare: 0.45,
-    paymentToken: 'USDC',
-    snapshotSlot: 234567890,
-    status: 'completed',
-    createdAt: '2023-10-15',
-    claimedCount: 118,
-    totalEligible: 118,
-  },
-  {
-    id: 2,
-    totalPool: 40000,
-    amountPerShare: 0.40,
-    paymentToken: 'USDC',
-    snapshotSlot: 223456789,
-    status: 'completed',
-    createdAt: '2023-07-15',
-    claimedCount: 105,
-    totalEligible: 110,
-  },
-  {
-    id: 1,
-    totalPool: 35000,
-    amountPerShare: 0.35,
-    paymentToken: 'USDC',
-    snapshotSlot: 212345678,
-    status: 'completed',
-    createdAt: '2023-04-15',
-    claimedCount: 95,
-    totalEligible: 100,
-  },
-]
+import { Plus, DollarSign, Users, Clock, CheckCircle, RefreshCw } from 'lucide-react'
+import { api, DividendRound } from '@/lib/api'
 
 export default function DividendsPage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [dividendRounds, setDividendRounds] = useState<DividendRound[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchDividendRounds = async () => {
+    if (!selectedToken) return
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await api.getDividendRounds(selectedToken.id)
+      setDividendRounds(data)
+    } catch (e: any) {
+      console.error('Failed to fetch dividend rounds:', e)
+      setError(e.detail || 'Failed to fetch dividend rounds')
+      setDividendRounds([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchDividendRounds()
+  }, [selectedToken])
+
+  const handleClaim = async (roundId: number) => {
+    if (!selectedToken) return
+    try {
+      await api.claimDividend(selectedToken.id, roundId)
+      fetchDividendRounds()
+    } catch (e: any) {
+      console.error('Failed to claim dividend:', e)
+      setError(e.detail || 'Failed to claim dividend')
+    }
+  }
 
   const statusColors = {
     pending: 'bg-yellow-500/10 text-yellow-500',
@@ -78,8 +51,8 @@ export default function DividendsPage() {
     completed: 'bg-blue-500/10 text-blue-500',
   }
 
-  const totalDistributed = mockDividendRounds.reduce((sum, r) => sum + r.totalPool, 0)
-  const activeRound = mockDividendRounds.find(r => r.status === 'active')
+  const totalDistributed = dividendRounds.reduce((sum, r) => sum + r.total_pool, 0)
+  const activeRound = dividendRounds.find(r => r.status === 'active')
 
   if (!selectedToken) {
     return (
@@ -104,11 +77,25 @@ export default function DividendsPage() {
             Distribute dividends to {selectedToken.symbol} holders
           </p>
         </div>
-        <Button onClick={() => setShowCreateModal(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Create Distribution
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={fetchDividendRounds} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button onClick={() => setShowCreateModal(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Create Distribution
+          </Button>
+        </div>
       </div>
+
+      {error && (
+        <Card className="border-red-500/50 bg-red-500/10">
+          <CardContent className="pt-4">
+            <p className="text-red-500">{error}</p>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
@@ -116,7 +103,7 @@ export default function DividendsPage() {
             <CardTitle className="text-sm font-medium">Total Distributed</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${totalDistributed.toLocaleString()}</div>
+            <div className="text-2xl font-bold">${loading ? '...' : totalDistributed.toLocaleString()}</div>
             <p className="text-xs text-muted-foreground">all time</p>
           </CardContent>
         </Card>
@@ -125,8 +112,8 @@ export default function DividendsPage() {
             <CardTitle className="text-sm font-medium">Distribution Rounds</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{mockDividendRounds.length}</div>
-            <p className="text-xs text-muted-foreground">completed</p>
+            <div className="text-2xl font-bold">{loading ? '...' : dividendRounds.length}</div>
+            <p className="text-xs text-muted-foreground">total</p>
           </CardContent>
         </Card>
         <Card>
@@ -135,10 +122,10 @@ export default function DividendsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {activeRound ? `$${activeRound.totalPool.toLocaleString()}` : 'None'}
+              {loading ? '...' : activeRound ? `$${activeRound.total_pool.toLocaleString()}` : 'None'}
             </div>
             <p className="text-xs text-muted-foreground">
-              {activeRound ? `${activeRound.claimedCount}/${activeRound.totalEligible} claimed` : '—'}
+              {activeRound ? `${activeRound.claimed_count}/${activeRound.total_eligible} claimed` : '—'}
             </p>
           </CardContent>
         </Card>
@@ -148,9 +135,9 @@ export default function DividendsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              ${mockDividendRounds[0]?.amountPerShare.toFixed(2) ?? '—'}
+              ${loading ? '...' : dividendRounds[0]?.amount_per_share?.toFixed(2) ?? '—'}
             </div>
-            <p className="text-xs text-muted-foreground">USDC</p>
+            <p className="text-xs text-muted-foreground">{dividendRounds[0]?.payment_token || '—'}</p>
           </CardContent>
         </Card>
       </div>
@@ -175,31 +162,31 @@ export default function DividendsPage() {
             <div className="grid gap-4 md:grid-cols-3">
               <div>
                 <p className="text-sm text-muted-foreground">Total Pool</p>
-                <p className="text-xl font-bold">${activeRound.totalPool.toLocaleString()} USDC</p>
+                <p className="text-xl font-bold">${activeRound.total_pool.toLocaleString()} {activeRound.payment_token}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Per Share</p>
-                <p className="text-xl font-bold">${activeRound.amountPerShare.toFixed(2)} USDC</p>
+                <p className="text-xl font-bold">${activeRound.amount_per_share.toFixed(2)} {activeRound.payment_token}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Expires</p>
-                <p className="text-xl font-bold">{activeRound.expiresAt}</p>
+                <p className="text-xl font-bold">{activeRound.expires_at || '—'}</p>
               </div>
             </div>
             <div className="mt-4">
               <div className="flex justify-between text-sm mb-1">
                 <span>Claims progress</span>
-                <span>{activeRound.claimedCount} / {activeRound.totalEligible}</span>
+                <span>{activeRound.claimed_count} / {activeRound.total_eligible}</span>
               </div>
               <div className="w-full bg-muted rounded-full h-2">
                 <div
                   className="bg-green-500 h-2 rounded-full transition-all"
-                  style={{ width: `${(activeRound.claimedCount / activeRound.totalEligible) * 100}%` }}
+                  style={{ width: `${activeRound.total_eligible > 0 ? (activeRound.claimed_count / activeRound.total_eligible) * 100 : 0}%` }}
                 />
               </div>
             </div>
             <div className="mt-4">
-              <Button className="w-full">
+              <Button className="w-full" onClick={() => handleClaim(activeRound.id)}>
                 <DollarSign className="h-4 w-4 mr-2" />
                 Claim Dividend
               </Button>
@@ -214,40 +201,50 @@ export default function DividendsPage() {
           <CardDescription>Past dividend distributions</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-3 px-4 font-medium">Round</th>
-                  <th className="text-left py-3 px-4 font-medium">Total Pool</th>
-                  <th className="text-left py-3 px-4 font-medium">Per Share</th>
-                  <th className="text-left py-3 px-4 font-medium">Token</th>
-                  <th className="text-left py-3 px-4 font-medium">Status</th>
-                  <th className="text-left py-3 px-4 font-medium">Claims</th>
-                  <th className="text-left py-3 px-4 font-medium">Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {mockDividendRounds.map((round) => (
-                  <tr key={round.id} className="border-b hover:bg-muted/50">
-                    <td className="py-3 px-4 font-medium">#{round.id}</td>
-                    <td className="py-3 px-4">${round.totalPool.toLocaleString()}</td>
-                    <td className="py-3 px-4">${round.amountPerShare.toFixed(2)}</td>
-                    <td className="py-3 px-4">{round.paymentToken}</td>
-                    <td className="py-3 px-4">
-                      <span className={`px-2 py-1 rounded text-xs capitalize ${statusColors[round.status]}`}>
-                        {round.status}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      {round.claimedCount} / {round.totalEligible}
-                    </td>
-                    <td className="py-3 px-4 text-muted-foreground">{round.createdAt}</td>
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : dividendRounds.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">
+              No dividend distributions found
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-3 px-4 font-medium">Round</th>
+                    <th className="text-left py-3 px-4 font-medium">Total Pool</th>
+                    <th className="text-left py-3 px-4 font-medium">Per Share</th>
+                    <th className="text-left py-3 px-4 font-medium">Token</th>
+                    <th className="text-left py-3 px-4 font-medium">Status</th>
+                    <th className="text-left py-3 px-4 font-medium">Claims</th>
+                    <th className="text-left py-3 px-4 font-medium">Date</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {dividendRounds.map((round) => (
+                    <tr key={round.id} className="border-b hover:bg-muted/50">
+                      <td className="py-3 px-4 font-medium">#{round.id}</td>
+                      <td className="py-3 px-4">${round.total_pool.toLocaleString()}</td>
+                      <td className="py-3 px-4">${round.amount_per_share.toFixed(2)}</td>
+                      <td className="py-3 px-4">{round.payment_token}</td>
+                      <td className="py-3 px-4">
+                        <span className={`px-2 py-1 rounded text-xs capitalize ${statusColors[round.status]}`}>
+                          {round.status}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        {round.claimed_count} / {round.total_eligible}
+                      </td>
+                      <td className="py-3 px-4 text-muted-foreground">{round.created_at}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

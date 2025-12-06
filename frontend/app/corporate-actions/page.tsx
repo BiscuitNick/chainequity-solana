@@ -1,55 +1,57 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/useAppStore'
-import { Split, Type, History, AlertCircle } from 'lucide-react'
-
-interface CorporateAction {
-  id: number
-  type: 'stock_split' | 'symbol_change' | 'reverse_split'
-  description: string
-  status: 'pending' | 'executed' | 'cancelled'
-  executedAt?: string
-  details: Record<string, any>
-}
-
-// Mock data
-const mockActions: CorporateAction[] = [
-  {
-    id: 1,
-    type: 'stock_split',
-    description: '2:1 Stock Split',
-    status: 'executed',
-    executedAt: '2024-01-15',
-    details: { numerator: 2, denominator: 1 },
-  },
-  {
-    id: 2,
-    type: 'symbol_change',
-    description: 'Symbol changed from ACM to ACME',
-    status: 'executed',
-    executedAt: '2024-01-01',
-    details: { oldSymbol: 'ACM', newSymbol: 'ACME' },
-  },
-]
+import { Split, Type, History, AlertCircle, RefreshCw } from 'lucide-react'
+import { api, CorporateAction } from '@/lib/api'
 
 export default function CorporateActionsPage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
   const [showSplitModal, setShowSplitModal] = useState(false)
   const [showSymbolModal, setShowSymbolModal] = useState(false)
+  const [actions, setActions] = useState<CorporateAction[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const typeIcons = {
+  const fetchCorporateActions = async () => {
+    if (!selectedToken) return
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await api.getCorporateActions(selectedToken.id)
+      setActions(data)
+    } catch (e: any) {
+      console.error('Failed to fetch corporate actions:', e)
+      setError(e.detail || 'Failed to fetch corporate actions')
+      setActions([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchCorporateActions()
+  }, [selectedToken])
+
+  const typeIcons: Record<string, JSX.Element> = {
     stock_split: <Split className="h-4 w-4" />,
     symbol_change: <Type className="h-4 w-4" />,
     reverse_split: <Split className="h-4 w-4 rotate-180" />,
   }
 
-  const statusColors = {
-    pending: 'bg-yellow-500/10 text-yellow-500',
-    executed: 'bg-green-500/10 text-green-500',
-    cancelled: 'bg-red-500/10 text-red-500',
+  const getActionDescription = (action: CorporateAction): string => {
+    switch (action.action_type) {
+      case 'stock_split':
+        return `${action.action_data.numerator}:${action.action_data.denominator} Stock Split`
+      case 'reverse_split':
+        return `${action.action_data.numerator}:${action.action_data.denominator} Reverse Split`
+      case 'symbol_change':
+        return `Symbol changed from ${action.action_data.old_symbol} to ${action.action_data.new_symbol}`
+      default:
+        return action.action_type
+    }
   }
 
   if (!selectedToken) {
@@ -75,7 +77,19 @@ export default function CorporateActionsPage() {
             Stock splits and symbol changes for {selectedToken.symbol}
           </p>
         </div>
+        <Button variant="outline" onClick={fetchCorporateActions} disabled={loading}>
+          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
       </div>
+
+      {error && (
+        <Card className="border-red-500/50 bg-red-500/10">
+          <CardContent className="pt-4">
+            <p className="text-red-500">{error}</p>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="hover:border-primary/50 transition-colors">
@@ -148,27 +162,31 @@ export default function CorporateActionsPage() {
           <CardDescription>Past corporate actions for this token</CardDescription>
         </CardHeader>
         <CardContent>
-          {mockActions.length === 0 ? (
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : actions.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">
               No corporate actions have been executed
             </p>
           ) : (
             <div className="space-y-4">
-              {mockActions.map((action) => (
+              {actions.map((action) => (
                 <div key={action.id} className="flex items-center justify-between p-4 border rounded-lg">
                   <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded bg-muted flex items-center justify-center">
-                      {typeIcons[action.type]}
+                      {typeIcons[action.action_type] || <History className="h-4 w-4" />}
                     </div>
                     <div>
-                      <p className="font-medium">{action.description}</p>
+                      <p className="font-medium">{getActionDescription(action)}</p>
                       <p className="text-xs text-muted-foreground">
-                        {action.executedAt && `Executed on ${action.executedAt}`}
+                        Executed on {new Date(action.executed_at).toLocaleDateString()} by {action.executed_by.slice(0, 4)}...{action.executed_by.slice(-4)}
                       </p>
                     </div>
                   </div>
-                  <span className={`px-2 py-1 rounded text-xs capitalize ${statusColors[action.status]}`}>
-                    {action.status}
+                  <span className="px-2 py-1 rounded text-xs capitalize bg-green-500/10 text-green-500">
+                    executed
                   </span>
                 </div>
               ))}
