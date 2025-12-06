@@ -22,13 +22,23 @@ class ApiClient {
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`
 
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    })
+    let response: Response
+    try {
+      response = await fetch(url, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+      })
+    } catch (networkError) {
+      // Network-level errors (connection refused, DNS failure, etc.)
+      const error: ApiError = {
+        detail: `Failed to connect to API at ${this.baseUrl}. Is the backend running?`,
+        status: 0,
+      }
+      throw error
+    }
 
     if (!response.ok) {
       const error: ApiError = {

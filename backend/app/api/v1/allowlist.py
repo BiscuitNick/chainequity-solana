@@ -1,5 +1,5 @@
 """Allowlist API endpoints"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List
@@ -19,7 +19,7 @@ router = APIRouter()
 
 
 @router.get("", response_model=List[AllowlistEntryResponse])
-async def get_allowlist(token_id: int, db: AsyncSession = Depends(get_db)):
+async def get_allowlist(token_id: int = Path(...), db: AsyncSession = Depends(get_db)):
     """Get all wallets on allowlist"""
     result = await db.execute(
         select(Wallet).where(Wallet.token_id == token_id)
@@ -39,7 +39,7 @@ async def get_allowlist(token_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{address}", response_model=AllowlistEntryResponse)
-async def get_wallet_status(token_id: int, address: str, db: AsyncSession = Depends(get_db)):
+async def get_wallet_status(token_id: int = Path(...), address: str = Path(...), db: AsyncSession = Depends(get_db)):
     """Get specific wallet allowlist status"""
     result = await db.execute(
         select(Wallet).where(
@@ -62,11 +62,11 @@ async def get_wallet_status(token_id: int, address: str, db: AsyncSession = Depe
 
 
 @router.post("/approve")
-async def approve_wallet(token_id: int, request: ApproveWalletRequest, db: AsyncSession = Depends(get_db)):
+async def approve_wallet(request: ApproveWalletRequest, token_id: int = Path(...), db: AsyncSession = Depends(get_db)):
     """Add wallet to allowlist - returns unsigned transaction for client signing"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(Token).where(Token.id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -110,11 +110,11 @@ async def approve_wallet(token_id: int, request: ApproveWalletRequest, db: Async
 
 
 @router.post("/revoke")
-async def revoke_wallet(token_id: int, request: ApproveWalletRequest, db: AsyncSession = Depends(get_db)):
+async def revoke_wallet(request: ApproveWalletRequest, token_id: int = Path(...), db: AsyncSession = Depends(get_db)):
     """Remove wallet from allowlist - returns unsigned transaction for client signing"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(Token).where(Token.id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -158,11 +158,11 @@ async def revoke_wallet(token_id: int, request: ApproveWalletRequest, db: AsyncS
 
 
 @router.post("/bulk-approve")
-async def bulk_approve(token_id: int, request: BulkApproveRequest, db: AsyncSession = Depends(get_db)):
+async def bulk_approve(request: BulkApproveRequest, token_id: int = Path(...), db: AsyncSession = Depends(get_db)):
     """Bulk approve multiple wallets - returns unsigned transactions for client signing"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(Token).where(Token.id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:

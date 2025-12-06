@@ -5,13 +5,21 @@ from app.api.v1 import factory, tokens, allowlist, captable, vesting, dividends,
 
 api_router = APIRouter()
 
-# Include all sub-routers
+# Create a combined tokens router that includes all token-related sub-routers
+tokens_router = APIRouter()
+
+# Include base tokens endpoints
+tokens_router.include_router(tokens.router, tags=["Tokens"])
+
+# Include token-specific sub-routers (these have {token_id} in their paths)
+tokens_router.include_router(allowlist.router, prefix="/{token_id}/allowlist", tags=["Allowlist"])
+tokens_router.include_router(captable.router, prefix="/{token_id}/captable", tags=["Cap Table"])
+tokens_router.include_router(vesting.router, prefix="/{token_id}/vesting", tags=["Vesting"])
+tokens_router.include_router(dividends.router, prefix="/{token_id}/dividends", tags=["Dividends"])
+tokens_router.include_router(governance.router, prefix="/{token_id}/governance", tags=["Governance"])
+tokens_router.include_router(admin.router, prefix="/{token_id}/admin", tags=["Admin"])
+
+# Include all top-level routers
 api_router.include_router(factory.router, prefix="/factory", tags=["Factory"])
-api_router.include_router(tokens.router, prefix="/tokens", tags=["Tokens"])
-api_router.include_router(allowlist.router, prefix="/tokens/{token_id}/allowlist", tags=["Allowlist"])
-api_router.include_router(captable.router, prefix="/tokens/{token_id}/captable", tags=["Cap Table"])
-api_router.include_router(vesting.router, prefix="/tokens/{token_id}/vesting", tags=["Vesting"])
-api_router.include_router(dividends.router, prefix="/tokens/{token_id}/dividends", tags=["Dividends"])
-api_router.include_router(governance.router, prefix="/tokens/{token_id}/governance", tags=["Governance"])
-api_router.include_router(admin.router, prefix="/tokens/{token_id}/admin", tags=["Admin"])
+api_router.include_router(tokens_router, prefix="/tokens")
 api_router.include_router(sync.router, prefix="/sync", tags=["Sync"])

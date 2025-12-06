@@ -1,5 +1,5 @@
 """Vesting API endpoints"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List
@@ -22,7 +22,7 @@ router = APIRouter()
 
 
 @router.get("", response_model=List[VestingScheduleResponse])
-async def list_vesting_schedules(token_id: int, db: AsyncSession = Depends(get_db)):
+async def list_vesting_schedules(token_id: int = Path(...), db: AsyncSession = Depends(get_db)):
     """List all vesting schedules for a token"""
     result = await db.execute(
         select(VestingSchedule).where(VestingSchedule.token_id == token_id)
@@ -33,7 +33,7 @@ async def list_vesting_schedules(token_id: int, db: AsyncSession = Depends(get_d
 
 
 @router.get("/{schedule_id}", response_model=VestingScheduleResponse)
-async def get_vesting_schedule(token_id: int, schedule_id: str, db: AsyncSession = Depends(get_db)):
+async def get_vesting_schedule(token_id: int = Path(...), schedule_id: str = Path(...), db: AsyncSession = Depends(get_db)):
     """Get a specific vesting schedule"""
     result = await db.execute(
         select(VestingSchedule).where(
@@ -51,8 +51,8 @@ async def get_vesting_schedule(token_id: int, schedule_id: str, db: AsyncSession
 
 @router.get("/wallet/{address}", response_model=List[VestingScheduleResponse])
 async def get_wallet_vesting_schedules(
-    token_id: int,
-    address: str,
+    token_id: int = Path(...),
+    address: str = Path(...),
     db: AsyncSession = Depends(get_db)
 ):
     """Get all vesting schedules for a wallet"""
@@ -69,14 +69,14 @@ async def get_wallet_vesting_schedules(
 
 @router.post("")
 async def create_vesting_schedule(
-    token_id: int,
     request: CreateVestingRequest,
+    token_id: int = Path(...),
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new vesting schedule - returns unsigned transaction for client signing"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(Token).where(Token.id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -128,8 +128,8 @@ async def create_vesting_schedule(
 
 @router.post("/{schedule_id}/release")
 async def release_vested_tokens(
-    token_id: int,
-    schedule_id: str,
+    token_id: int = Path(...),
+    schedule_id: str = Path(...),
     db: AsyncSession = Depends(get_db)
 ):
     """Release vested tokens - returns unsigned transaction for client signing"""
@@ -158,7 +158,7 @@ async def release_vested_tokens(
 
     # Get token for mint address
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(Token).where(Token.id == token_id)
     )
     token = result.scalar_one_or_none()
 
@@ -180,9 +180,9 @@ async def release_vested_tokens(
 
 @router.post("/{schedule_id}/terminate")
 async def terminate_vesting(
-    token_id: int,
-    schedule_id: str,
     request: TerminateVestingRequest,
+    token_id: int = Path(...),
+    schedule_id: str = Path(...),
     db: AsyncSession = Depends(get_db)
 ):
     """Terminate a vesting schedule - returns unsigned transaction for client signing"""
@@ -206,7 +206,7 @@ async def terminate_vesting(
 
     # Get token for mint address
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(Token).where(Token.id == token_id)
     )
     token = result.scalar_one_or_none()
 
@@ -236,9 +236,9 @@ async def terminate_vesting(
 
 @router.get("/{schedule_id}/termination-preview", response_model=TerminationPreviewResponse)
 async def get_termination_preview(
-    token_id: int,
-    schedule_id: str,
     termination_type: str,
+    token_id: int = Path(...),
+    schedule_id: str = Path(...),
     db: AsyncSession = Depends(get_db)
 ):
     """Preview the result of terminating a vesting schedule"""

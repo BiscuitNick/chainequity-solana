@@ -1,5 +1,5 @@
 """Governance API endpoints"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import List
@@ -62,7 +62,7 @@ def _proposal_to_response(p: Proposal) -> ProposalResponse:
 
 
 @router.get("/proposals", response_model=List[ProposalResponse])
-async def list_proposals(token_id: int, db: AsyncSession = Depends(get_db)):
+async def list_proposals(token_id: int = Path(...), db: AsyncSession = Depends(get_db)):
     """List all governance proposals"""
     result = await db.execute(
         select(Proposal)
@@ -75,7 +75,7 @@ async def list_proposals(token_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/proposals/{proposal_id}", response_model=ProposalResponse)
-async def get_proposal(token_id: int, proposal_id: int, db: AsyncSession = Depends(get_db)):
+async def get_proposal(token_id: int = Path(...), proposal_id: int = Path(...), db: AsyncSession = Depends(get_db)):
     """Get a specific proposal"""
     result = await db.execute(
         select(Proposal).where(
@@ -93,14 +93,14 @@ async def get_proposal(token_id: int, proposal_id: int, db: AsyncSession = Depen
 
 @router.post("/proposals")
 async def create_proposal(
-    token_id: int,
     request: CreateProposalRequest,
+    token_id: int = Path(...),
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new proposal - returns unsigned transaction for client signing"""
     # Verify token exists
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(Token).where(Token.id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -141,9 +141,9 @@ async def create_proposal(
 
 @router.post("/proposals/{proposal_id}/vote")
 async def vote_on_proposal(
-    token_id: int,
-    proposal_id: int,
     request: VoteRequest,
+    token_id: int = Path(...),
+    proposal_id: int = Path(...),
     db: AsyncSession = Depends(get_db)
 ):
     """Vote on a proposal - returns unsigned transaction for client signing"""
@@ -169,7 +169,7 @@ async def vote_on_proposal(
 
     # Get token for mint address
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(Token).where(Token.id == token_id)
     )
     token = result.scalar_one_or_none()
 
@@ -192,8 +192,8 @@ async def vote_on_proposal(
 
 @router.post("/proposals/{proposal_id}/execute")
 async def execute_proposal(
-    token_id: int,
-    proposal_id: int,
+    token_id: int = Path(...),
+    proposal_id: int = Path(...),
     db: AsyncSession = Depends(get_db)
 ):
     """Execute a passed proposal - returns unsigned transaction for client signing"""
@@ -220,7 +220,7 @@ async def execute_proposal(
 
     # Get token for mint address
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(Token).where(Token.id == token_id)
     )
     token = result.scalar_one_or_none()
 
@@ -244,8 +244,8 @@ async def execute_proposal(
 
 @router.get("/voting-power/{address}", response_model=VotingPowerResponse)
 async def get_voting_power(
-    token_id: int,
-    address: str,
+    token_id: int = Path(...),
+    address: str = Path(...),
     db: AsyncSession = Depends(get_db)
 ):
     """Get voting power for an address based on token balance"""

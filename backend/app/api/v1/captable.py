@@ -1,5 +1,5 @@
 """Cap-table API endpoints"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -33,7 +33,7 @@ async def _build_captable(
     """Build cap-table from current balances or snapshot"""
     # Get token info
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(Token).where(Token.id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -143,19 +143,19 @@ async def _build_captable(
 
 
 @router.get("", response_model=CapTableResponse)
-async def get_captable(token_id: int, db: AsyncSession = Depends(get_db)):
+async def get_captable(token_id: int = Path(...), db: AsyncSession = Depends(get_db)):
     """Get current cap-table"""
     return await _build_captable(token_id, db)
 
 
 @router.get("/at/{slot}", response_model=CapTableResponse)
-async def get_captable_at_slot(token_id: int, slot: int, db: AsyncSession = Depends(get_db)):
+async def get_captable_at_slot(token_id: int = Path(...), slot: int = Path(...), db: AsyncSession = Depends(get_db)):
     """Get cap-table at a specific slot"""
     return await _build_captable(token_id, db, slot)
 
 
 @router.get("/snapshots", response_model=List[SnapshotResponse])
-async def list_snapshots(token_id: int, db: AsyncSession = Depends(get_db)):
+async def list_snapshots(token_id: int = Path(...), db: AsyncSession = Depends(get_db)):
     """List available cap-table snapshots"""
     result = await db.execute(
         select(CapTableSnapshot)
@@ -177,7 +177,7 @@ async def list_snapshots(token_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.get("/export")
 async def export_captable(
-    token_id: int,
+    token_id: int = Path(...),
     format: ExportFormat = ExportFormat.CSV,
     slot: Optional[int] = None,
     db: AsyncSession = Depends(get_db)

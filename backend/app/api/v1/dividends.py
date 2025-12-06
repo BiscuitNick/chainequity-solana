@@ -1,5 +1,5 @@
 """Dividends API endpoints"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import List
@@ -38,7 +38,7 @@ def _round_to_response(r: DividendRound, total_claimed: int = 0, claim_count: in
 
 
 @router.get("", response_model=List[DividendRoundResponse])
-async def list_dividend_rounds(token_id: int, db: AsyncSession = Depends(get_db)):
+async def list_dividend_rounds(token_id: int = Path(...), db: AsyncSession = Depends(get_db)):
     """List all dividend rounds"""
     result = await db.execute(
         select(DividendRound)
@@ -66,7 +66,7 @@ async def list_dividend_rounds(token_id: int, db: AsyncSession = Depends(get_db)
 
 
 @router.get("/{round_id}", response_model=DividendRoundResponse)
-async def get_dividend_round(token_id: int, round_id: int, db: AsyncSession = Depends(get_db)):
+async def get_dividend_round(token_id: int = Path(...), round_id: int = Path(...), db: AsyncSession = Depends(get_db)):
     """Get a specific dividend round"""
     result = await db.execute(
         select(DividendRound).where(
@@ -95,14 +95,14 @@ async def get_dividend_round(token_id: int, round_id: int, db: AsyncSession = De
 
 @router.post("")
 async def create_dividend_round(
-    token_id: int,
     request: CreateDividendRequest,
+    token_id: int = Path(...),
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new dividend round - returns unsigned transaction for client signing"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(Token).where(Token.id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -150,7 +150,7 @@ async def create_dividend_round(
 
 
 @router.post("/{round_id}/claim")
-async def claim_dividend(token_id: int, round_id: int, db: AsyncSession = Depends(get_db)):
+async def claim_dividend(token_id: int = Path(...), round_id: int = Path(...), db: AsyncSession = Depends(get_db)):
     """Claim dividend for a round - returns unsigned transaction for client signing"""
     # Get dividend round
     result = await db.execute(
@@ -174,7 +174,7 @@ async def claim_dividend(token_id: int, round_id: int, db: AsyncSession = Depend
 
     # Get token for mint address
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(Token).where(Token.id == token_id)
     )
     token = result.scalar_one_or_none()
 
@@ -197,8 +197,8 @@ async def claim_dividend(token_id: int, round_id: int, db: AsyncSession = Depend
 
 @router.get("/unclaimed/{address}", response_model=UnclaimedDividendsResponse)
 async def get_unclaimed_dividends(
-    token_id: int,
-    address: str,
+    token_id: int = Path(...),
+    address: str = Path(...),
     db: AsyncSession = Depends(get_db)
 ):
     """Get unclaimed dividends for a wallet"""

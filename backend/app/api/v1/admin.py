@@ -1,5 +1,5 @@
 """Admin API endpoints"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List
@@ -20,11 +20,11 @@ router = APIRouter()
 
 
 @router.get("/multisig/config", response_model=MultisigConfigResponse)
-async def get_multisig_config(token_id: int, db: AsyncSession = Depends(get_db)):
+async def get_multisig_config(token_id: int = Path(...), db: AsyncSession = Depends(get_db)):
     """Get multi-sig configuration from on-chain data"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(Token).where(Token.id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -56,11 +56,11 @@ async def get_multisig_config(token_id: int, db: AsyncSession = Depends(get_db))
 
 
 @router.get("/multisig/pending", response_model=List[PendingTransactionResponse])
-async def list_pending_transactions(token_id: int, db: AsyncSession = Depends(get_db)):
+async def list_pending_transactions(token_id: int = Path(...), db: AsyncSession = Depends(get_db)):
     """List pending multi-sig transactions from on-chain data"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(Token).where(Token.id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -97,11 +97,11 @@ async def list_pending_transactions(token_id: int, db: AsyncSession = Depends(ge
 
 
 @router.post("/multisig/{tx_id}/sign")
-async def sign_transaction(token_id: int, tx_id: str, db: AsyncSession = Depends(get_db)):
+async def sign_transaction(token_id: int = Path(...), tx_id: str = Path(...), db: AsyncSession = Depends(get_db)):
     """Sign a pending multi-sig transaction - returns unsigned transaction for client signing"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(Token).where(Token.id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -129,11 +129,11 @@ async def sign_transaction(token_id: int, tx_id: str, db: AsyncSession = Depends
 
 
 @router.post("/multisig/{tx_id}/execute")
-async def execute_transaction(token_id: int, tx_id: str, db: AsyncSession = Depends(get_db)):
+async def execute_transaction(token_id: int = Path(...), tx_id: str = Path(...), db: AsyncSession = Depends(get_db)):
     """Execute an approved multi-sig transaction - returns unsigned transaction for client signing"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(Token).where(Token.id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -161,11 +161,11 @@ async def execute_transaction(token_id: int, tx_id: str, db: AsyncSession = Depe
 
 
 @router.post("/multisig/{tx_id}/cancel")
-async def cancel_transaction(token_id: int, tx_id: str, db: AsyncSession = Depends(get_db)):
+async def cancel_transaction(token_id: int = Path(...), tx_id: str = Path(...), db: AsyncSession = Depends(get_db)):
     """Cancel a pending multi-sig transaction - returns unsigned transaction for client signing"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(Token).where(Token.id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -194,14 +194,14 @@ async def cancel_transaction(token_id: int, tx_id: str, db: AsyncSession = Depen
 
 @router.post("/corporate-actions/split")
 async def initiate_split(
-    token_id: int,
     request: CorporateActionRequest,
+    token_id: int = Path(...),
     db: AsyncSession = Depends(get_db)
 ):
     """Initiate a stock split - returns unsigned transaction for client signing"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(Token).where(Token.id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -230,14 +230,14 @@ async def initiate_split(
 
 @router.post("/corporate-actions/symbol")
 async def change_symbol(
-    token_id: int,
     request: CorporateActionRequest,
+    token_id: int = Path(...),
     db: AsyncSession = Depends(get_db)
 ):
     """Change token symbol - returns unsigned transaction for client signing"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(Token).where(Token.id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -270,7 +270,7 @@ async def change_symbol(
 
 
 @router.get("/corporate-actions", response_model=List[dict])
-async def list_corporate_actions(token_id: int, db: AsyncSession = Depends(get_db)):
+async def list_corporate_actions(token_id: int = Path(...), db: AsyncSession = Depends(get_db)):
     """List all corporate actions for a token"""
     result = await db.execute(
         select(CorporateAction)
