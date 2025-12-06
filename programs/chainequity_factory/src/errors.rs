@@ -40,4 +40,23 @@ pub enum FactoryError {
 
     #[msg("Threshold must be at least 1")]
     ThresholdTooLow,
+
+    // Multi-sig errors
+    #[msg("Signer is not a member of the multi-sig")]
+    NotASigner,
+
+    #[msg("Transaction has already been executed")]
+    AlreadyExecuted,
+
+    #[msg("Signer has already approved this transaction")]
+    AlreadyApproved,
+
+    #[msg("Transaction has expired")]
+    TransactionExpired,
+
+    #[msg("Cannot cancel: not proposer and not expired")]
+    CannotCancel,
+
+    #[msg("Threshold not met: need more approvals")]
+    ThresholdNotMet,
 }

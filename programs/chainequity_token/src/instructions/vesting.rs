@@ -1,9 +1,9 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token_2022::{self, Token2022, Transfer};
+use anchor_spl::token_2022::{self, Token2022, Transfer, TransferChecked};
 use anchor_spl::token_interface::{Mint, TokenAccount};
 use chainequity_factory::instructions::create_token::TokenConfig;
 
-use crate::state::{VestingSchedule, VestingParams, VestingType, TerminationType, VESTING_SEED};
+use crate::state::{VestingSchedule, VestingParams, VestingType, TerminationType, VESTING_SEED, VESTING_ESCROW_SEED};
 use crate::errors::TokenError;
 use crate::events::{VestingScheduleCreated, VestedTokensReleased, VestingTerminated};
 
@@ -14,6 +14,11 @@ pub struct CreateVestingSchedule<'info> {
         constraint = token_config.features.vesting_enabled @ TokenError::FeatureDisabled,
     )]
     pub token_config: Account<'info, TokenConfig>,
+
+    #[account(
+        constraint = mint.key() == token_config.mint @ TokenError::Unauthorized,
+    )]
+    pub mint: InterfaceAccount<'info, Mint>,
 
     #[account(
         init,
@@ -29,12 +34,39 @@ pub struct CreateVestingSchedule<'info> {
     )]
     pub vesting_schedule: Account<'info, VestingSchedule>,
 
+    /// Escrow account to hold vested tokens
+    /// CHECK: PDA that will be the authority for the escrow token account
+    #[account(
+        seeds = [
+            VESTING_ESCROW_SEED,
+            vesting_schedule.key().as_ref()
+        ],
+        bump
+    )]
+    pub escrow_authority: UncheckedAccount<'info>,
+
+    /// Token account held by escrow authority (created beforehand or via associated token)
+    #[account(
+        mut,
+        token::mint = mint,
+    )]
+    pub escrow_token_account: InterfaceAccount<'info, TokenAccount>,
+
+    /// Authority's token account to fund the escrow
+    #[account(
+        mut,
+        token::mint = mint,
+        token::authority = authority,
+    )]
+    pub authority_token_account: InterfaceAccount<'info, TokenAccount>,
+
     /// CHECK: Beneficiary wallet
     pub beneficiary: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
 
+    pub token_program: Program<'info, Token2022>,
     pub system_program: Program<'info, System>,
 }
 
@@ -62,6 +94,22 @@ pub fn create_handler(ctx: Context<CreateVestingSchedule>, params: VestingParams
     schedule.termination_notes = None;
     schedule.bump = ctx.bumps.vesting_schedule;
 
+    // Transfer tokens from authority to escrow
+    let decimals = ctx.accounts.mint.decimals;
+    token_2022::transfer_checked(
+        CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            TransferChecked {
+                from: ctx.accounts.authority_token_account.to_account_info(),
+                mint: ctx.accounts.mint.to_account_info(),
+                to: ctx.accounts.escrow_token_account.to_account_info(),
+                authority: ctx.accounts.authority.to_account_info(),
+            },
+        ),
+        params.total_amount,
+        decimals,
+    )?;
+
     emit!(VestingScheduleCreated {
         token_config: ctx.accounts.token_config.key(),
         schedule: schedule.key(),
@@ -75,7 +123,7 @@ pub fn create_handler(ctx: Context<CreateVestingSchedule>, params: VestingParams
         slot: clock.slot,
     });
 
-    msg!("Created vesting schedule for {} with {} tokens",
+    msg!("Created vesting schedule for {} with {} tokens (funded to escrow)",
         ctx.accounts.beneficiary.key(),
         params.total_amount
     );
@@ -105,6 +153,16 @@ pub struct ReleaseVestedTokens<'info> {
     )]
     pub vesting_schedule: Account<'info, VestingSchedule>,
 
+    /// CHECK: PDA authority for escrow token account
+    #[account(
+        seeds = [
+            VESTING_ESCROW_SEED,
+            vesting_schedule.key().as_ref()
+        ],
+        bump
+    )]
+    pub escrow_authority: UncheckedAccount<'info>,
+
     #[account(
         mut,
         token::mint = mint,
@@ -126,6 +184,11 @@ pub struct ReleaseVestedTokens<'info> {
 
 pub fn release_handler(ctx: Context<ReleaseVestedTokens>) -> Result<()> {
     let clock = Clock::get()?;
+
+    // Get keys before mutable borrow
+    let vesting_schedule_key = ctx.accounts.vesting_schedule.key();
+    let escrow_bump = ctx.bumps.escrow_authority;
+
     let schedule = &mut ctx.accounts.vesting_schedule;
 
     // Calculate vested amount
@@ -139,8 +202,29 @@ pub fn release_handler(ctx: Context<ReleaseVestedTokens>) -> Result<()> {
         .checked_add(releasable)
         .ok_or(TokenError::MathOverflow)?;
 
-    // Transfer tokens from escrow to beneficiary
-    // Note: In production, would need proper PDA signing for escrow
+    // Transfer tokens from escrow to beneficiary with PDA signing
+    let escrow_seeds: &[&[u8]] = &[
+        VESTING_ESCROW_SEED,
+        vesting_schedule_key.as_ref(),
+        &[escrow_bump],
+    ];
+    let signer_seeds = &[escrow_seeds];
+
+    let decimals = ctx.accounts.mint.decimals;
+    token_2022::transfer_checked(
+        CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            TransferChecked {
+                from: ctx.accounts.escrow_token_account.to_account_info(),
+                mint: ctx.accounts.mint.to_account_info(),
+                to: ctx.accounts.beneficiary_token_account.to_account_info(),
+                authority: ctx.accounts.escrow_authority.to_account_info(),
+            },
+            signer_seeds,
+        ),
+        releasable,
+        decimals,
+    )?;
 
     emit!(VestedTokensReleased {
         token_config: ctx.accounts.token_config.key(),
@@ -161,6 +245,11 @@ pub struct TerminateVesting<'info> {
     pub token_config: Account<'info, TokenConfig>,
 
     #[account(
+        constraint = mint.key() == token_config.mint @ TokenError::Unauthorized,
+    )]
+    pub mint: InterfaceAccount<'info, Mint>,
+
+    #[account(
         mut,
         seeds = [
             VESTING_SEED,
@@ -173,11 +262,33 @@ pub struct TerminateVesting<'info> {
     )]
     pub vesting_schedule: Account<'info, VestingSchedule>,
 
-    /// CHECK: Treasury to receive forfeited tokens
-    pub treasury: UncheckedAccount<'info>,
+    /// CHECK: PDA authority for escrow token account
+    #[account(
+        seeds = [
+            VESTING_ESCROW_SEED,
+            vesting_schedule.key().as_ref()
+        ],
+        bump
+    )]
+    pub escrow_authority: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        token::mint = mint,
+    )]
+    pub escrow_token_account: InterfaceAccount<'info, TokenAccount>,
+
+    /// Treasury token account to receive forfeited tokens
+    #[account(
+        mut,
+        token::mint = mint,
+    )]
+    pub treasury_token_account: InterfaceAccount<'info, TokenAccount>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
+
+    pub token_program: Program<'info, Token2022>,
 }
 
 pub fn terminate_handler(
@@ -190,6 +301,11 @@ pub fn terminate_handler(
     }
 
     let clock = Clock::get()?;
+
+    // Get keys before mutable borrow
+    let vesting_schedule_key = ctx.accounts.vesting_schedule.key();
+    let escrow_bump = ctx.bumps.escrow_authority;
+
     let schedule = &mut ctx.accounts.vesting_schedule;
 
     // Calculate vested at current time
@@ -202,8 +318,11 @@ pub fn terminate_handler(
         TerminationType::Accelerated => schedule.total_amount,
     };
 
-    // Calculate amount to return to treasury
-    let to_return = schedule.total_amount.saturating_sub(final_vested);
+    // Calculate amounts
+    let already_released = schedule.released_amount;
+    let remaining_in_escrow = schedule.total_amount.saturating_sub(already_released);
+    let still_owed_to_beneficiary = final_vested.saturating_sub(already_released);
+    let to_return = remaining_in_escrow.saturating_sub(still_owed_to_beneficiary);
 
     // Update schedule state
     schedule.revoked = true;
@@ -212,6 +331,32 @@ pub fn terminate_handler(
     schedule.terminated_by = Some(ctx.accounts.authority.key());
     schedule.vested_at_termination = Some(final_vested);
     schedule.termination_notes = notes;
+
+    // Transfer unvested tokens back to treasury
+    if to_return > 0 {
+        let escrow_seeds: &[&[u8]] = &[
+            VESTING_ESCROW_SEED,
+            vesting_schedule_key.as_ref(),
+            &[escrow_bump],
+        ];
+        let signer_seeds = &[escrow_seeds];
+
+        let decimals = ctx.accounts.mint.decimals;
+        token_2022::transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                TransferChecked {
+                    from: ctx.accounts.escrow_token_account.to_account_info(),
+                    mint: ctx.accounts.mint.to_account_info(),
+                    to: ctx.accounts.treasury_token_account.to_account_info(),
+                    authority: ctx.accounts.escrow_authority.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            to_return,
+            decimals,
+        )?;
+    }
 
     emit!(VestingTerminated {
         token_config: ctx.accounts.token_config.key(),

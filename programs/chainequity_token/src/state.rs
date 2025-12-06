@@ -253,5 +253,6 @@ impl DividendClaim {
 pub const ALLOWLIST_SEED: &[u8] = b"allowlist";
 pub const RESTRICTIONS_SEED: &[u8] = b"restrictions";
 pub const VESTING_SEED: &[u8] = b"vesting";
+pub const VESTING_ESCROW_SEED: &[u8] = b"vesting_escrow";
 pub const DIVIDEND_ROUND_SEED: &[u8] = b"dividend_round";
 pub const DIVIDEND_CLAIM_SEED: &[u8] = b"dividend_claim";

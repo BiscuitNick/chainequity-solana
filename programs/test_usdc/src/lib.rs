@@ -18,11 +18,12 @@ pub mod test_usdc {
 
     /// Mint TestUSDC tokens to a wallet (for testing only)
     pub fn mint(ctx: Context<MintTestUsdc>, amount: u64) -> Result<()> {
-        let seeds = &[
+        let bump = ctx.bumps.mint_authority;
+        let seeds: &[&[u8]] = &[
             b"test_usdc_authority",
-            &[ctx.bumps.mint_authority],
+            &[bump],
         ];
-        let signer_seeds = &[&seeds[..]];
+        let signer_seeds = &[seeds];
 
         token_2022::mint_to(
             CpiContext::new_with_signer(

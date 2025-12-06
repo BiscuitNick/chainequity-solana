@@ -156,3 +156,98 @@ pub struct CreateTemplateParams {
 pub const FACTORY_SEED: &[u8] = b"factory";
 /// Seeds for template PDA
 pub const TEMPLATE_SEED: &[u8] = b"template";
+/// Seeds for multisig PDA
+pub const MULTISIG_SEED: &[u8] = b"multisig";
+/// Seeds for transaction PDA
+pub const TRANSACTION_SEED: &[u8] = b"transaction";
+
+/// Multi-sig wallet configuration for admin operations
+#[account]
+pub struct MultiSig {
+    /// Token this multi-sig controls
+    pub token_mint: Pubkey,
+    /// List of signers (max 10)
+    pub signers: Vec<Pubkey>,
+    /// Required number of signatures
+    pub threshold: u8,
+    /// Transaction counter for unique IDs
+    pub transaction_count: u64,
+    /// PDA bump
+    pub bump: u8,
+}
+
+impl MultiSig {
+    pub const MAX_SIGNERS: usize = 10;
+    pub const LEN: usize = 8 + // discriminator
+        32 + // token_mint
+        (4 + 32 * Self::MAX_SIGNERS) + // signers vec
+        1 +  // threshold
+        8 +  // transaction_count
+        1;   // bump
+}
+
+/// Pending multi-sig transaction
+#[account]
+pub struct MultiSigTransaction {
+    /// Associated multi-sig account
+    pub multisig: Pubkey,
+    /// Transaction ID
+    pub transaction_id: u64,
+    /// Type of transaction
+    pub transaction_type: TransactionType,
+    /// Who approved
+    pub approvers: Vec<Pubkey>,
+    /// When created
+    pub created_at: i64,
+    /// Execution deadline (optional)
+    pub deadline: Option<i64>,
+    /// Whether executed
+    pub executed: bool,
+    /// PDA bump
+    pub bump: u8,
+}
+
+impl MultiSigTransaction {
+    pub const MAX_APPROVERS: usize = 10;
+    pub const LEN: usize = 8 + // discriminator
+        32 + // multisig
+        8 +  // transaction_id
+        TransactionType::MAX_LEN + // transaction_type
+        (4 + 32 * Self::MAX_APPROVERS) + // approvers vec
+        8 +  // created_at
+        (1 + 8) + // deadline Option<i64>
+        1 +  // executed
+        1;   // bump
+}
+
+/// Types of multi-sig transactions
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq)]
+pub enum TransactionType {
+    /// Add address to allowlist
+    AllowlistAdd { address: Pubkey },
+    /// Remove address from allowlist
+    AllowlistRemove { address: Pubkey },
+    /// Update investor restrictions
+    UpdateRestrictions { address: Pubkey, daily_limit: Option<u64>, locked_until: Option<i64> },
+    /// Terminate vesting schedule
+    TerminateVesting { vesting_account: Pubkey, termination_type: u8 },
+    /// Execute stock split
+    StockSplit { numerator: u64, denominator: u64 },
+    /// Change symbol
+    SymbolChange { new_symbol: String },
+    /// Pause/unpause token
+    SetPaused { paused: bool },
+    /// Update multi-sig threshold
+    UpdateThreshold { new_threshold: u8 },
+    /// Add signer to multi-sig
+    AddSigner { new_signer: Pubkey },
+    /// Remove signer from multi-sig
+    RemoveSigner { signer: Pubkey },
+}
+
+impl TransactionType {
+    pub const MAX_LEN: usize = 1 + // enum discriminant
+        32 + // largest pubkey field
+        8 + 8 + // UpdateRestrictions extra fields
+        10; // SymbolChange string (max 10 chars)
+}

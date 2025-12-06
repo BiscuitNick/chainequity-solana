@@ -17,7 +17,7 @@ default = []
 
 [dependencies]
 anchor-lang = { version = "0.30.1", features = ["init-if-needed"] }
-anchor-spl = { version = "0.30.1", features = ["token", "token-2022"] }
+anchor-spl = { version = "0.30.1", features = ["token", "token_2022"] }
 solana-program = "1.18"
 chainequity_factory = { path = "../chainequity_factory", features = ["cpi"] }
 chainequity_token = { path = "../chainequity_token", features = ["cpi"] }

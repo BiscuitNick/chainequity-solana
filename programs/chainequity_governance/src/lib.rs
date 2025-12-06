@@ -6,7 +6,7 @@ pub mod errors;
 pub mod events;
 
 use instructions::*;
-use state::*;
+use state::{GovernanceAction, Vote as VoteChoice};
 
 declare_id!("BPFLoaderUpgradeab1e11111111111111111111111");
 
@@ -24,11 +24,11 @@ pub mod chainequity_governance {
     }
 
     /// Cast a vote on a proposal
-    pub fn vote(
+    pub fn cast_vote(
         ctx: Context<CastVote>,
-        vote: Vote,
+        vote_choice: VoteChoice,
     ) -> Result<()> {
-        instructions::vote::handler(ctx, vote)
+        instructions::vote::handler(ctx, vote_choice)
     }
 
     /// Execute a passed proposal
