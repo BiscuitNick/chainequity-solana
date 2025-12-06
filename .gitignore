@@ -1,0 +1,50 @@
+# Solana/Anchor
+target/
+.anchor/
+test-ledger/
+*.so
+
+# Node
+node_modules/
+.next/
+.turbo/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+.venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+build/
+
+# Databases
+*.db
+*.sqlite
+
+# Coverage
+htmlcov/
+.coverage
+coverage/
