@@ -24,7 +24,7 @@ async def get_multisig_config(token_id: int = Path(...), db: AsyncSession = Depe
     """Get multi-sig configuration from on-chain data"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.id == token_id)
+        select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -60,7 +60,7 @@ async def list_pending_transactions(token_id: int = Path(...), db: AsyncSession 
     """List pending multi-sig transactions from on-chain data"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.id == token_id)
+        select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -101,7 +101,7 @@ async def sign_transaction(token_id: int = Path(...), tx_id: str = Path(...), db
     """Sign a pending multi-sig transaction - returns unsigned transaction for client signing"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.id == token_id)
+        select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -133,7 +133,7 @@ async def execute_transaction(token_id: int = Path(...), tx_id: str = Path(...),
     """Execute an approved multi-sig transaction - returns unsigned transaction for client signing"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.id == token_id)
+        select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -165,7 +165,7 @@ async def cancel_transaction(token_id: int = Path(...), tx_id: str = Path(...), 
     """Cancel a pending multi-sig transaction - returns unsigned transaction for client signing"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.id == token_id)
+        select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -201,7 +201,7 @@ async def initiate_split(
     """Initiate a stock split - returns unsigned transaction for client signing"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.id == token_id)
+        select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -237,7 +237,7 @@ async def change_symbol(
     """Change token symbol - returns unsigned transaction for client signing"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.id == token_id)
+        select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:

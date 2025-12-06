@@ -17,11 +17,13 @@ class TransferRequest(BaseModel):
 
 class TokenListResponse(BaseModel):
     id: int
+    token_id: int
     mint_address: str
     symbol: str
     name: str
     decimals: int
     total_supply: int
+    is_paused: bool
     created_at: datetime
 
 

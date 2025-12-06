@@ -51,14 +51,14 @@ export function useTokens() {
 
   const result = useApiCall(async () => {
     const tokens = await api.listTokens()
-    // Transform to app store format
+    // Transform to app store format - use token_id (business ID) not id (internal DB ID)
     const appTokens = tokens.map((t) => ({
-      tokenId: t.id,
+      tokenId: t.token_id,
       symbol: t.symbol,
       name: t.name,
       mintAddress: t.mint_address,
       totalSupply: t.total_supply,
-      isPaused: false,
+      isPaused: t.is_paused,
     }))
     setTokens(appTokens)
     return tokens

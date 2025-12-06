@@ -27,6 +27,7 @@ class Token(Base):
     wallets = relationship("Wallet", back_populates="token", lazy="dynamic")
     transfers = relationship("Transfer", back_populates="token", lazy="dynamic")
     vesting_schedules = relationship("VestingSchedule", back_populates="token", lazy="dynamic")
+    issuances = relationship("TokenIssuance", back_populates="token", lazy="dynamic")
     dividend_rounds = relationship("DividendRound", back_populates="token", lazy="dynamic")
     proposals = relationship("Proposal", back_populates="token", lazy="dynamic")
     corporate_actions = relationship("CorporateAction", back_populates="token", lazy="dynamic")

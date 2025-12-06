@@ -4,16 +4,21 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/useAppStore'
-import { UserPlus, UserMinus, Search, Download, Upload, RefreshCw } from 'lucide-react'
+import { UserPlus, UserMinus, UserCheck, Search, Download, Upload, RefreshCw, Coins } from 'lucide-react'
 import { api, AllowlistEntry } from '@/lib/api'
+import { AddWalletModal } from '@/components/AddWalletModal'
+import { IssueTokensModal } from '@/components/IssueTokensModal'
 
 export default function AllowlistPage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
   const [searchTerm, setSearchTerm] = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showIssueModal, setShowIssueModal] = useState(false)
+  const [selectedWallet, setSelectedWallet] = useState<AllowlistEntry | null>(null)
   const [allowlist, setAllowlist] = useState<AllowlistEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
 
   const fetchAllowlist = async () => {
     if (!selectedToken) return
@@ -39,10 +44,62 @@ export default function AllowlistPage() {
     entry.address.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  const statusColors = {
+  const statusColors: Record<string, string> = {
     active: 'bg-green-500/10 text-green-500',
     pending: 'bg-yellow-500/10 text-yellow-500',
     revoked: 'bg-red-500/10 text-red-500',
+  }
+
+  const handleApprove = async (entry: AllowlistEntry) => {
+    if (!selectedToken) return
+    setActionLoading(entry.address)
+    try {
+      await api.approveWallet(selectedToken.tokenId, {
+        address: entry.address,
+        kyc_level: entry.kyc_level
+      })
+      await fetchAllowlist()
+    } catch (e: any) {
+      console.error('Failed to approve wallet:', e)
+      setError(e.detail || 'Failed to approve wallet')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleRevoke = async (entry: AllowlistEntry) => {
+    if (!selectedToken) return
+    if (!confirm(`Are you sure you want to revoke ${entry.address.slice(0, 8)}...?`)) return
+
+    setActionLoading(entry.address)
+    try {
+      await api.revokeWallet(selectedToken.tokenId, entry.address)
+      await fetchAllowlist()
+    } catch (e: any) {
+      console.error('Failed to revoke wallet:', e)
+      setError(e.detail || 'Failed to revoke wallet')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleIssueTokens = (entry: AllowlistEntry) => {
+    setSelectedWallet(entry)
+    setShowIssueModal(true)
+  }
+
+  const handleExportCSV = () => {
+    const headers = ['Address', 'KYC Level', 'Status', 'Added At']
+    const rows = allowlist.map(e => [e.address, e.kyc_level, e.status, e.added_at || ''])
+    const csv = [headers, ...rows].map(row => row.join(',')).join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${selectedToken?.symbol || 'token'}-allowlist.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   if (!selectedToken) {
@@ -73,13 +130,9 @@ export default function AllowlistPage() {
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={allowlist.length === 0}>
             <Download className="h-4 w-4 mr-2" />
             Export CSV
-          </Button>
-          <Button variant="outline" size="sm">
-            <Upload className="h-4 w-4 mr-2" />
-            Bulk Import
           </Button>
           <Button onClick={() => setShowAddModal(true)}>
             <UserPlus className="h-4 w-4 mr-2" />
@@ -92,6 +145,9 @@ export default function AllowlistPage() {
         <Card className="border-red-500/50 bg-red-500/10">
           <CardContent className="pt-4">
             <p className="text-red-500">{error}</p>
+            <Button variant="ghost" size="sm" className="mt-2" onClick={() => setError(null)}>
+              Dismiss
+            </Button>
           </CardContent>
         </Card>
       )}
@@ -102,7 +158,7 @@ export default function AllowlistPage() {
             <CardTitle className="text-sm font-medium">Total Approved</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <div className="text-2xl font-bold text-green-500">
               {loading ? '...' : allowlist.filter(e => e.status === 'active').length}
             </div>
           </CardContent>
@@ -112,7 +168,7 @@ export default function AllowlistPage() {
             <CardTitle className="text-sm font-medium">Pending Review</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <div className="text-2xl font-bold text-yellow-500">
               {loading ? '...' : allowlist.filter(e => e.status === 'pending').length}
             </div>
           </CardContent>
@@ -132,7 +188,7 @@ export default function AllowlistPage() {
             <CardTitle className="text-sm font-medium">Revoked</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <div className="text-2xl font-bold text-red-500">
               {loading ? '...' : allowlist.filter(e => e.status === 'revoked').length}
             </div>
           </CardContent>
@@ -142,13 +198,13 @@ export default function AllowlistPage() {
       <Card>
         <CardHeader>
           <div className="flex justify-between items-center">
-            <CardTitle>Approved Wallets</CardTitle>
+            <CardTitle>Wallet Allowlist</CardTitle>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
                 type="text"
                 placeholder="Search addresses..."
-                className="pl-10 pr-4 py-2 border rounded-md text-sm w-64"
+                className="pl-10 pr-4 py-2 border rounded-md text-sm w-64 bg-background"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -161,9 +217,17 @@ export default function AllowlistPage() {
               <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : filteredEntries.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">
-              {searchTerm ? 'No matching addresses found' : 'No wallets in allowlist'}
-            </p>
+            <div className="text-center py-8">
+              <p className="text-muted-foreground mb-4">
+                {searchTerm ? 'No matching addresses found' : 'No wallets in allowlist'}
+              </p>
+              {!searchTerm && (
+                <Button onClick={() => setShowAddModal(true)}>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Add First Wallet
+                </Button>
+              )}
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -173,13 +237,15 @@ export default function AllowlistPage() {
                     <th className="text-left py-3 px-4 font-medium">KYC Level</th>
                     <th className="text-left py-3 px-4 font-medium">Status</th>
                     <th className="text-left py-3 px-4 font-medium">Added</th>
-                    <th className="text-left py-3 px-4 font-medium">Actions</th>
+                    <th className="text-right py-3 px-4 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredEntries.map((entry, idx) => (
                     <tr key={idx} className="border-b hover:bg-muted/50">
-                      <td className="py-3 px-4 font-mono text-sm">{entry.address}</td>
+                      <td className="py-3 px-4">
+                        <span className="font-mono text-sm">{entry.address}</span>
+                      </td>
                       <td className="py-3 px-4">
                         <span className="px-2 py-1 bg-blue-500/10 text-blue-500 rounded text-xs">
                           Tier {entry.kyc_level}
@@ -190,11 +256,63 @@ export default function AllowlistPage() {
                           {entry.status}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-sm text-muted-foreground">{entry.added_at}</td>
+                      <td className="py-3 px-4 text-sm text-muted-foreground">
+                        {entry.added_at ? new Date(entry.added_at).toLocaleDateString() : '-'}
+                      </td>
                       <td className="py-3 px-4">
-                        <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600">
-                          <UserMinus className="h-4 w-4" />
-                        </Button>
+                        <div className="flex justify-end gap-1">
+                          {entry.status === 'pending' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-green-500 hover:text-green-600"
+                              onClick={() => handleApprove(entry)}
+                              disabled={actionLoading === entry.address}
+                              title="Approve wallet"
+                            >
+                              <UserCheck className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {entry.status === 'active' && (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-primary hover:text-primary/80"
+                                onClick={() => handleIssueTokens(entry)}
+                                disabled={actionLoading === entry.address}
+                                title="Issue tokens"
+                              >
+                                <Coins className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-500 hover:text-red-600"
+                                onClick={() => handleRevoke(entry)}
+                                disabled={actionLoading === entry.address}
+                                title="Revoke wallet"
+                              >
+                                <UserMinus className="h-4 w-4" />
+                              </Button>
+                            </>
+                          )}
+                          {entry.status === 'revoked' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-green-500 hover:text-green-600"
+                              onClick={() => handleApprove(entry)}
+                              disabled={actionLoading === entry.address}
+                              title="Re-approve wallet"
+                            >
+                              <UserCheck className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {actionLoading === entry.address && (
+                            <RefreshCw className="h-4 w-4 animate-spin ml-2" />
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -204,6 +322,27 @@ export default function AllowlistPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Add Wallet Modal */}
+      <AddWalletModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onSuccess={fetchAllowlist}
+        tokenId={selectedToken.tokenId}
+      />
+
+      {/* Issue Tokens Modal */}
+      <IssueTokensModal
+        isOpen={showIssueModal}
+        onClose={() => {
+          setShowIssueModal(false)
+          setSelectedWallet(null)
+        }}
+        onSuccess={fetchAllowlist}
+        tokenId={selectedToken.tokenId}
+        tokenSymbol={selectedToken.symbol}
+        wallet={selectedWallet}
+      />
     </div>
   )
 }

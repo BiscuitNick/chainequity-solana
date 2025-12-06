@@ -3,12 +3,14 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List
+from datetime import datetime
 
 from app.models.database import get_db
 from app.models.wallet import Wallet
 from app.models.token import Token
 from app.schemas.allowlist import (
     AllowlistEntryResponse,
+    AddWalletRequest,
     ApproveWalletRequest,
     BulkApproveRequest,
 )
@@ -31,6 +33,7 @@ async def get_allowlist(token_id: int = Path(...), db: AsyncSession = Depends(ge
             address=w.address,
             status=w.status,
             kyc_level=w.kyc_level,
+            added_at=w.created_at.isoformat() if w.created_at else None,
             approved_at=w.approved_at,
             approved_by=w.approved_by,
         )
@@ -56,17 +59,65 @@ async def get_wallet_status(token_id: int = Path(...), address: str = Path(...),
         address=wallet.address,
         status=wallet.status,
         kyc_level=wallet.kyc_level,
+        added_at=wallet.created_at.isoformat() if wallet.created_at else None,
         approved_at=wallet.approved_at,
         approved_by=wallet.approved_by,
     )
 
 
+@router.post("")
+async def add_wallet(request: AddWalletRequest, token_id: int = Path(...), db: AsyncSession = Depends(get_db)):
+    """Add a wallet to the allowlist (pending status)"""
+    # Get token - token_id in URL is the business token_id, not the internal id
+    result = await db.execute(
+        select(Token).where(Token.token_id == token_id)
+    )
+    token = result.scalar_one_or_none()
+    if not token:
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    # Validate wallet address format
+    try:
+        Pubkey.from_string(request.address)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid wallet address format")
+
+    # Check if wallet already exists
+    result = await db.execute(
+        select(Wallet).where(
+            Wallet.token_id == token_id,
+            Wallet.address == request.address
+        )
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Wallet already on allowlist with status: {existing.status}")
+
+    # Create wallet entry with pending status
+    wallet = Wallet(
+        token_id=token_id,
+        address=request.address,
+        kyc_level=request.kyc_level,
+        status="pending",
+    )
+    db.add(wallet)
+    await db.commit()
+    await db.refresh(wallet)
+
+    return {
+        "message": "Wallet added to allowlist",
+        "address": wallet.address,
+        "status": wallet.status,
+        "kyc_level": wallet.kyc_level,
+    }
+
+
 @router.post("/approve")
 async def approve_wallet(request: ApproveWalletRequest, token_id: int = Path(...), db: AsyncSession = Depends(get_db)):
-    """Add wallet to allowlist - returns unsigned transaction for client signing"""
-    # Get token
+    """Approve a wallet on the allowlist - changes status to active"""
+    # Get token - token_id in URL is the business token_id, not the internal id
     result = await db.execute(
-        select(Token).where(Token.id == token_id)
+        select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -78,24 +129,46 @@ async def approve_wallet(request: ApproveWalletRequest, token_id: int = Path(...
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid wallet address format")
 
-    # Check if wallet already on allowlist
+    # Check if wallet exists on allowlist
     result = await db.execute(
         select(Wallet).where(
             Wallet.token_id == token_id,
             Wallet.address == request.address
         )
     )
-    existing = result.scalar_one_or_none()
-    if existing and existing.status == "approved":
-        raise HTTPException(status_code=400, detail="Wallet already on allowlist")
+    wallet = result.scalar_one_or_none()
 
-    # Build transaction data
+    if not wallet:
+        # Create and approve in one step if not exists
+        wallet = Wallet(
+            token_id=token_id,
+            address=request.address,
+            kyc_level=request.kyc_level,
+            status="active",
+            approved_at=datetime.utcnow(),
+        )
+        db.add(wallet)
+    elif wallet.status == "active":
+        raise HTTPException(status_code=400, detail="Wallet already approved")
+    else:
+        # Update existing wallet to active
+        wallet.status = "active"
+        wallet.kyc_level = request.kyc_level
+        wallet.approved_at = datetime.utcnow()
+
+    await db.commit()
+    await db.refresh(wallet)
+
+    # Build transaction data for on-chain approval
     solana_client = await get_solana_client()
     token_config_pda, _ = solana_client.derive_token_config_pda(Pubkey.from_string(token.mint_address))
     allowlist_pda, _ = solana_client.derive_allowlist_pda(token_config_pda, wallet_pubkey)
 
     return {
-        "message": "Allowlist approve transaction prepared for signing",
+        "message": "Wallet approved on allowlist",
+        "address": wallet.address,
+        "status": wallet.status,
+        "kyc_level": wallet.kyc_level,
         "allowlist_pda": str(allowlist_pda),
         "instruction": {
             "program": str(solana_client.program_addresses.token),
@@ -103,7 +176,7 @@ async def approve_wallet(request: ApproveWalletRequest, token_id: int = Path(...
             "data": {
                 "wallet": request.address,
                 "approved": True,
-                "kyc_level": request.kyc_level if hasattr(request, 'kyc_level') else 1,
+                "kyc_level": request.kyc_level,
             }
         }
     }
@@ -111,10 +184,10 @@ async def approve_wallet(request: ApproveWalletRequest, token_id: int = Path(...
 
 @router.post("/revoke")
 async def revoke_wallet(request: ApproveWalletRequest, token_id: int = Path(...), db: AsyncSession = Depends(get_db)):
-    """Remove wallet from allowlist - returns unsigned transaction for client signing"""
-    # Get token
+    """Revoke a wallet from allowlist - changes status to revoked"""
+    # Get token - token_id in URL is the business token_id, not the internal id
     result = await db.execute(
-        select(Token).where(Token.id == token_id)
+        select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -133,9 +206,15 @@ async def revoke_wallet(request: ApproveWalletRequest, token_id: int = Path(...)
             Wallet.address == request.address
         )
     )
-    existing = result.scalar_one_or_none()
-    if not existing or existing.status != "approved":
+    wallet = result.scalar_one_or_none()
+    if not wallet:
         raise HTTPException(status_code=400, detail="Wallet not on allowlist")
+    if wallet.status == "revoked":
+        raise HTTPException(status_code=400, detail="Wallet already revoked")
+
+    # Update wallet status
+    wallet.status = "revoked"
+    await db.commit()
 
     # Build transaction data
     solana_client = await get_solana_client()
@@ -143,7 +222,9 @@ async def revoke_wallet(request: ApproveWalletRequest, token_id: int = Path(...)
     allowlist_pda, _ = solana_client.derive_allowlist_pda(token_config_pda, wallet_pubkey)
 
     return {
-        "message": "Allowlist revoke transaction prepared for signing",
+        "message": "Wallet revoked from allowlist",
+        "address": wallet.address,
+        "status": wallet.status,
         "allowlist_pda": str(allowlist_pda),
         "instruction": {
             "program": str(solana_client.program_addresses.token),
@@ -159,10 +240,10 @@ async def revoke_wallet(request: ApproveWalletRequest, token_id: int = Path(...)
 
 @router.post("/bulk-approve")
 async def bulk_approve(request: BulkApproveRequest, token_id: int = Path(...), db: AsyncSession = Depends(get_db)):
-    """Bulk approve multiple wallets - returns unsigned transactions for client signing"""
-    # Get token
+    """Bulk approve multiple wallets"""
+    # Get token - token_id in URL is the business token_id, not the internal id
     result = await db.execute(
-        select(Token).where(Token.id == token_id)
+        select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -179,12 +260,35 @@ async def bulk_approve(request: BulkApproveRequest, token_id: int = Path(...), d
             wallet_pubkey = Pubkey.from_string(wallet_address)
             allowlist_pda, _ = solana_client.derive_allowlist_pda(token_config_pda, wallet_pubkey)
 
+            # Check/update in database
+            result = await db.execute(
+                select(Wallet).where(
+                    Wallet.token_id == token_id,
+                    Wallet.address == wallet_address
+                )
+            )
+            wallet = result.scalar_one_or_none()
+
+            if not wallet:
+                wallet = Wallet(
+                    token_id=token_id,
+                    address=wallet_address,
+                    kyc_level=request.kyc_level,
+                    status="active",
+                    approved_at=datetime.utcnow(),
+                )
+                db.add(wallet)
+            elif wallet.status != "active":
+                wallet.status = "active"
+                wallet.kyc_level = request.kyc_level
+                wallet.approved_at = datetime.utcnow()
+
             instructions.append({
                 "wallet": wallet_address,
                 "allowlist_pda": str(allowlist_pda),
                 "data": {
                     "approved": True,
-                    "kyc_level": request.kyc_level if hasattr(request, 'kyc_level') else 1,
+                    "kyc_level": request.kyc_level,
                 }
             })
         except Exception as e:
@@ -193,10 +297,35 @@ async def bulk_approve(request: BulkApproveRequest, token_id: int = Path(...), d
                 "error": str(e)
             })
 
+    await db.commit()
+
     return {
         "message": f"Bulk approve prepared: {len(instructions)} valid, {len(errors)} errors",
         "program": str(solana_client.program_addresses.token),
         "action": "bulk_update_allowlist",
         "instructions": instructions,
         "errors": errors
+    }
+
+
+@router.delete("/{address}")
+async def remove_wallet(token_id: int = Path(...), address: str = Path(...), db: AsyncSession = Depends(get_db)):
+    """Remove a wallet from the allowlist entirely"""
+    result = await db.execute(
+        select(Wallet).where(
+            Wallet.token_id == token_id,
+            Wallet.address == address
+        )
+    )
+    wallet = result.scalar_one_or_none()
+
+    if not wallet:
+        raise HTTPException(status_code=404, detail="Wallet not on allowlist")
+
+    await db.delete(wallet)
+    await db.commit()
+
+    return {
+        "message": "Wallet removed from allowlist",
+        "address": address
     }

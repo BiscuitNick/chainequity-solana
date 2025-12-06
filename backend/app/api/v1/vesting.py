@@ -76,7 +76,7 @@ async def create_vesting_schedule(
     """Create a new vesting schedule - returns unsigned transaction for client signing"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.id == token_id)
+        select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -158,7 +158,7 @@ async def release_vested_tokens(
 
     # Get token for mint address
     result = await db.execute(
-        select(Token).where(Token.id == token_id)
+        select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
 
@@ -206,7 +206,7 @@ async def terminate_vesting(
 
     # Get token for mint address
     result = await db.execute(
-        select(Token).where(Token.id == token_id)
+        select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
 

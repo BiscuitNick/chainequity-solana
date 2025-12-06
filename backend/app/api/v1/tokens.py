@@ -33,11 +33,13 @@ async def list_tokens(
     return [
         TokenListResponse(
             id=t.id,
+            token_id=t.token_id,
             mint_address=t.mint_address,
             symbol=t.symbol,
             name=t.name,
             decimals=t.decimals,
             total_supply=t.total_supply,
+            is_paused=t.is_paused,
             created_at=t.created_at,
         )
         for t in tokens

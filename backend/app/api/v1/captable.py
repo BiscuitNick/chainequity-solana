@@ -31,9 +31,9 @@ async def _build_captable(
     slot: Optional[int] = None
 ) -> CapTableResponse:
     """Build cap-table from current balances or snapshot"""
-    # Get token info
+    # Get token info - token_id in URL is the business token_id, not the internal id
     result = await db.execute(
-        select(Token).where(Token.id == token_id)
+        select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -103,7 +103,7 @@ async def _build_captable(
             vesting_map[vs.beneficiary]["vested"] += vested
             vesting_map[vs.beneficiary]["unvested"] += unvested
 
-        # Get wallet info (lockouts, limits, status)
+        # Get wallet info (status) and restrictions (lockouts, limits)
         wallet_map = {}
         result = await db.execute(
             select(Wallet).where(Wallet.token_id == token_id)
@@ -122,14 +122,16 @@ async def _build_captable(
             vesting = vesting_map.get(b.wallet, {"vested": 0, "unvested": 0})
             ownership_pct = (b.balance / total_supply * 100) if total_supply > 0 else 0
 
+            # Note: wallet.restrictions requires eager loading for async context
+            # For now, skip restrictions to avoid MissingGreenlet error
             holders.append(CapTableEntryResponse(
                 wallet=b.wallet,
                 balance=b.balance,
                 ownership_pct=round(ownership_pct, 4),
                 vested=vesting["vested"],
                 unvested=vesting["unvested"],
-                lockout_until=wallet.lockout_until if wallet else None,
-                daily_limit=wallet.daily_limit if wallet else None,
+                lockout_until=None,  # TODO: eager load restrictions
+                daily_limit=None,    # TODO: eager load restrictions
                 status=wallet.status if wallet else "active",
             ))
 

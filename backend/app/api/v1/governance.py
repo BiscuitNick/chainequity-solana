@@ -100,7 +100,7 @@ async def create_proposal(
     """Create a new proposal - returns unsigned transaction for client signing"""
     # Verify token exists
     result = await db.execute(
-        select(Token).where(Token.id == token_id)
+        select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -169,7 +169,7 @@ async def vote_on_proposal(
 
     # Get token for mint address
     result = await db.execute(
-        select(Token).where(Token.id == token_id)
+        select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
 
@@ -220,7 +220,7 @@ async def execute_proposal(
 
     # Get token for mint address
     result = await db.execute(
-        select(Token).where(Token.id == token_id)
+        select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
 

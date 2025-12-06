@@ -102,7 +102,7 @@ async def create_dividend_round(
     """Create a new dividend round - returns unsigned transaction for client signing"""
     # Get token
     result = await db.execute(
-        select(Token).where(Token.id == token_id)
+        select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -174,7 +174,7 @@ async def claim_dividend(token_id: int = Path(...), round_id: int = Path(...), d
 
     # Get token for mint address
     result = await db.execute(
-        select(Token).where(Token.id == token_id)
+        select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
 

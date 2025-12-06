@@ -98,9 +98,42 @@ class ApiClient {
     })
   }
 
+  async approveWallet(tokenId: number, data: { address: string; kyc_level: number }) {
+    return this.request<any>(`/tokens/${tokenId}/allowlist/approve`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async revokeWallet(tokenId: number, address: string) {
+    return this.request<any>(`/tokens/${tokenId}/allowlist/revoke`, {
+      method: 'POST',
+      body: JSON.stringify({ address }),
+    })
+  }
+
   async removeFromAllowlist(tokenId: number, address: string) {
     return this.request<any>(`/tokens/${tokenId}/allowlist/${address}`, {
       method: 'DELETE',
+    })
+  }
+
+  // Token Issuance endpoints
+  async getIssuances(tokenId: number) {
+    return this.request<TokenIssuance[]>(`/tokens/${tokenId}/issuance`)
+  }
+
+  async issueTokens(tokenId: number, data: IssueTokensRequest) {
+    return this.request<IssueTokensResponse>(`/tokens/${tokenId}/issuance`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async confirmIssuance(tokenId: number, issuanceId: number, txSignature?: string) {
+    return this.request<any>(`/tokens/${tokenId}/issuance/${issuanceId}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify({ tx_signature: txSignature }),
     })
   }
 
@@ -234,11 +267,13 @@ class ApiClient {
 // Types
 export interface TokenListResponse {
   id: number
+  token_id: number
   mint_address: string
   symbol: string
   name: string
   decimals: number
   total_supply: number
+  is_paused: boolean
   created_at: string
 }
 
@@ -269,9 +304,40 @@ export interface TokenHolder {
 export interface AllowlistEntry {
   address: string
   kyc_level: number
-  status: string
+  status: 'pending' | 'active' | 'revoked'
+  added_at?: string
   approved_at?: string
   approved_by?: string
+}
+
+export interface TokenIssuance {
+  id: number
+  recipient: string
+  amount: number
+  issued_by?: string
+  notes?: string
+  tx_signature?: string
+  status: 'pending' | 'completed' | 'failed'
+  created_at: string
+  completed_at?: string
+}
+
+export interface IssueTokensRequest {
+  recipient: string
+  amount: number
+  notes?: string
+}
+
+export interface IssueTokensResponse {
+  message: string
+  issuance_id: number
+  recipient: string
+  amount: number
+  instruction: {
+    program: string
+    action: string
+    data: Record<string, any>
+  }
 }
 
 export interface CapTableEntry {
