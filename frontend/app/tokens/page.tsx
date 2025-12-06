@@ -30,9 +30,9 @@ export default function TokensPage() {
 
     try {
       // First try to fetch from the backend API
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'
-      console.log('Fetching from:', `${apiUrl}/api/v1/factory/tokens`)
-      const response = await fetch(`${apiUrl}/api/v1/factory/tokens`, {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+      console.log('Fetching from:', `${apiUrl}/factory/tokens`)
+      const response = await fetch(`${apiUrl}/factory/tokens`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
