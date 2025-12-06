@@ -8,6 +8,7 @@ use crate::errors::TokenError;
 use crate::events::{DividendRoundCreated, DividendClaimed};
 
 #[derive(Accounts)]
+#[instruction(round_id: u64)]
 pub struct CreateDividendRound<'info> {
     #[account(
         constraint = token_config.features.dividends_enabled @ TokenError::FeatureDisabled,
@@ -21,7 +22,7 @@ pub struct CreateDividendRound<'info> {
         seeds = [
             DIVIDEND_ROUND_SEED,
             token_config.key().as_ref(),
-            &Clock::get()?.slot.to_le_bytes()
+            &round_id.to_le_bytes()
         ],
         bump
     )]
@@ -45,6 +46,7 @@ pub struct CreateDividendRound<'info> {
 
 pub fn create_round_handler(
     ctx: Context<CreateDividendRound>,
+    round_id: u64,
     total_pool: u64,
     expires_in_seconds: Option<u64>,
 ) -> Result<()> {
@@ -62,7 +64,7 @@ pub fn create_round_handler(
     };
 
     round.token_config = token_config.key();
-    round.id = clock.slot; // Using slot as unique ID
+    round.id = round_id;
     round.payment_token = ctx.accounts.payment_token.key();
     round.total_pool = total_pool;
     round.snapshot_slot = clock.slot;

@@ -8,7 +8,6 @@ from solana.rpc.commitment import Commitment, Confirmed, Finalized
 from solders.pubkey import Pubkey
 from solders.signature import Signature
 from anchorpy import Program, Provider, Wallet
-from anchorpy.idl import Idl
 
 from app.config import get_settings
 

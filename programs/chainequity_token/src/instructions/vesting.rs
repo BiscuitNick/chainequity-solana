@@ -28,7 +28,7 @@ pub struct CreateVestingSchedule<'info> {
             VESTING_SEED,
             token_config.key().as_ref(),
             beneficiary.key().as_ref(),
-            &Clock::get()?.unix_timestamp.to_le_bytes()
+            &params.start_time.to_le_bytes()
         ],
         bump
     )]

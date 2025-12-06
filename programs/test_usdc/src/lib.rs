@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_2022::{self, Token2022, MintTo};
 use anchor_spl::token_interface::{Mint, TokenAccount};
 
-declare_id!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+declare_id!("28JkLhzXCQme5fFrAqoWwyJxSNiv71CMQcS5x4xCtqoX");
 
 /// TestUSDC - A mock stablecoin for testing dividend distribution
 /// Anyone can mint tokens for testing purposes (Devnet only!)

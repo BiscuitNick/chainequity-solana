@@ -5,7 +5,7 @@ from datetime import datetime
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.token import Token, TokenConfig
+from app.models.token import Token
 from app.models.wallet import Wallet, AllowlistEntry
 from app.models.vesting import VestingSchedule, VestingStatus
 from app.models.dividend import DividendRound, DividendClaim, DividendStatus

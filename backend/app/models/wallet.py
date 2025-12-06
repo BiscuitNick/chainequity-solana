@@ -64,3 +64,20 @@ class WalletRestriction(Base):
 
     def __repr__(self):
         return f"<WalletRestriction wallet_id={self.wallet_id}>"
+
+
+class AllowlistEntry(Base):
+    """Allowlist entry for on-chain tracking (indexed from events)"""
+    __tablename__ = "allowlist_entries"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    token_config = Column(String(64), nullable=False, index=True)
+    wallet_address = Column(String(64), nullable=False, index=True)
+    kyc_level = Column(Integer, default=1)
+    status = Column(String(20), nullable=False, default="active")
+    added_at = Column(DateTime, nullable=True)
+    added_tx = Column(String(128), nullable=True)
+    revoked_at = Column(DateTime, nullable=True)
+
+    def __repr__(self):
+        return f"<AllowlistEntry {self.wallet_address[:8]}... ({self.status})>"

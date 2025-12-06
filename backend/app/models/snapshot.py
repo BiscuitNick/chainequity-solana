@@ -1,6 +1,6 @@
 """Cap-table snapshot models"""
 from datetime import datetime
-from sqlalchemy import Column, Integer, BigInteger, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, Integer, BigInteger, DateTime, ForeignKey, JSON, String
 from sqlalchemy.orm import relationship
 
 from app.models.database import Base
@@ -39,7 +39,3 @@ class CurrentBalance(Base):
 
     def __repr__(self):
         return f"<CurrentBalance {self.wallet[:8]}... ({self.balance})>"
-
-
-# Import String for wallet column
-from sqlalchemy import String

@@ -8,7 +8,7 @@ pub mod events;
 use instructions::*;
 use state::{GovernanceAction, Vote as VoteChoice};
 
-declare_id!("BPFLoaderUpgradeab1e11111111111111111111111");
+declare_id!("qonFMa4fD9KLRWG73aQzvQ2d5WnBNF5S9jzaRwLcwQQ");
 
 #[program]
 pub mod chainequity_governance {

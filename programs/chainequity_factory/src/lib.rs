@@ -8,7 +8,7 @@ pub mod events;
 use instructions::*;
 use state::{CreateTokenParams, CreateTemplateParams, TransactionType};
 
-declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
+declare_id!("3Jui9FBBhqbbxE9s83fcUya1xrG9kpUZS1pTBAcWohbE");
 
 #[program]
 pub mod chainequity_factory {

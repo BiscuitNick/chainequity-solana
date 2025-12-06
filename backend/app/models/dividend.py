@@ -1,9 +1,17 @@
 """Dividend models"""
 from datetime import datetime
+from enum import Enum
 from sqlalchemy import Column, Integer, String, BigInteger, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 
 from app.models.database import Base
+
+
+class DividendStatus(str, Enum):
+    """Dividend round status"""
+    PENDING = "pending"
+    ACTIVE = "active"
+    COMPLETED = "completed"
 
 
 class DividendRound(Base):

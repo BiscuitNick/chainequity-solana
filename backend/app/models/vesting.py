@@ -1,9 +1,19 @@
 """Vesting schedule models"""
 from datetime import datetime
+from enum import Enum
 from sqlalchemy import Column, Integer, String, BigInteger, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
 
 from app.models.database import Base
+
+
+class VestingStatus(str, Enum):
+    """Vesting schedule status"""
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    TERMINATED_STANDARD = "terminated_standard"
+    TERMINATED_FOR_CAUSE = "terminated_for_cause"
+    TERMINATED_ACCELERATED = "terminated_accelerated"
 
 
 class VestingSchedule(Base):

@@ -1,9 +1,20 @@
 """Governance models"""
 from datetime import datetime
+from enum import Enum
 from sqlalchemy import Column, Integer, String, BigInteger, DateTime, ForeignKey, Text, JSON
 from sqlalchemy.orm import relationship
 
 from app.models.database import Base
+
+
+class ProposalStatus(str, Enum):
+    """Proposal status"""
+    PENDING = "pending"
+    ACTIVE = "active"
+    PASSED = "passed"
+    FAILED = "failed"
+    EXECUTED = "executed"
+    CANCELLED = "cancelled"
 
 
 class Proposal(Base):
@@ -66,3 +77,7 @@ class VoteRecord(Base):
 
     def __repr__(self):
         return f"<VoteRecord {self.voter[:8]}... ({self.vote})>"
+
+
+# Alias for event_processor compatibility
+Vote = VoteRecord

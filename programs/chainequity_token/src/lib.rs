@@ -8,7 +8,7 @@ pub mod events;
 use instructions::*;
 use state::*;
 
-declare_id!("HmbTLCmaGvZhKnn1Zfa1JVnp7vkMV4DYVxPLWBVoN65L");
+declare_id!("TxPUnQaa9MWhTdTURSZEieS6BKmpYiU4c3GtYKV3Kq2");
 
 #[program]
 pub mod chainequity_token {
@@ -135,10 +135,11 @@ pub mod chainequity_token {
     /// Create a dividend round
     pub fn create_dividend_round(
         ctx: Context<CreateDividendRound>,
+        round_id: u64,
         total_pool: u64,
         expires_in_seconds: Option<u64>,
     ) -> Result<()> {
-        instructions::dividends::create_round_handler(ctx, total_pool, expires_in_seconds)
+        instructions::dividends::create_round_handler(ctx, round_id, total_pool, expires_in_seconds)
     }
 
     /// Claim dividend

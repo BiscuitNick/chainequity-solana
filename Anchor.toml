@@ -1,27 +1,27 @@
 [toolchain]
-anchor_version = "0.30.1"
+anchor_version = "0.32.1"
 
 [features]
 resolution = true
 skip-lint = false
 
-[programs.localnet]
-chainequity_factory = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
-chainequity_token = "HmbTLCmaGvZhKnn1Zfa1JVnp7vkMV4DYVxPLWBVoN65L"
-chainequity_governance = "BPFLoaderUpgradeab1e11111111111111111111111"
-test_usdc = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-
 [programs.devnet]
 chainequity_factory = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
-chainequity_token = "HmbTLCmaGvZhKnn1Zfa1JVnp7vkMV4DYVxPLWBVoN65L"
 chainequity_governance = "BPFLoaderUpgradeab1e11111111111111111111111"
+chainequity_token = "HmbTLCmaGvZhKnn1Zfa1JVnp7vkMV4DYVxPLWBVoN65L"
 test_usdc = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+
+[programs.localnet]
+chainequity_factory = "3Jui9FBBhqbbxE9s83fcUya1xrG9kpUZS1pTBAcWohbE"
+chainequity_governance = "qonFMa4fD9KLRWG73aQzvQ2d5WnBNF5S9jzaRwLcwQQ"
+chainequity_token = "TxPUnQaa9MWhTdTURSZEieS6BKmpYiU4c3GtYKV3Kq2"
+test_usdc = "28JkLhzXCQme5fFrAqoWwyJxSNiv71CMQcS5x4xCtqoX"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "Localnet"
+cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

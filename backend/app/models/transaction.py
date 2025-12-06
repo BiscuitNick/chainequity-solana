@@ -59,3 +59,19 @@ class CorporateAction(Base):
 
     def __repr__(self):
         return f"<CorporateAction {self.action_type} (token_id={self.token_id})>"
+
+
+class Transaction(Base):
+    """Indexed Solana transaction"""
+    __tablename__ = "transactions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    signature = Column(String(88), nullable=False, unique=True, index=True)
+    slot = Column(BigInteger, nullable=False, index=True)
+    block_time = Column(DateTime, nullable=True)
+    program_id = Column(String(44), nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="success")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<Transaction {self.signature[:16]}... (slot={self.slot})>"

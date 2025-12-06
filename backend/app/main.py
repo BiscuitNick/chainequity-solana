@@ -9,8 +9,16 @@ from app.config import get_settings
 from app.api.v1.router import api_router
 from app.api.websocket import websocket_router
 from app.models.database import init_db, close_db
-from app.services.indexer import start_indexer, stop_indexer
 from app.services.solana_client import close_solana_client
+
+# Indexer is optional - only imported if available
+try:
+    from app.services.indexer import start_indexer, stop_indexer
+    INDEXER_AVAILABLE = True
+except ImportError:
+    INDEXER_AVAILABLE = False
+    async def start_indexer(): pass
+    async def stop_indexer(): pass
 
 # Configure structured logging
 structlog.configure(
@@ -44,9 +52,12 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
 
-    # Start indexer background task
-    await start_indexer()
-    logger.info("Transaction indexer started")
+    # Start indexer background task (if available)
+    if INDEXER_AVAILABLE:
+        await start_indexer()
+        logger.info("Transaction indexer started")
+    else:
+        logger.warning("Transaction indexer not available - running in limited mode")
 
     yield
 
