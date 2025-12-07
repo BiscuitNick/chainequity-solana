@@ -113,9 +113,35 @@ async function main() {
   );
   console.log("MultiSig PDA:", multisigPda.toString());
 
+  const symbol = "ACME";
+
+  // Check if symbol already exists by querying existing token configs
+  console.log(`\nChecking for duplicate symbols...`);
+  for (let i = 0; i < tokenCount.toNumber(); i++) {
+    const [existingTokenConfigPda] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("token_config"),
+        factoryPda.toBuffer(),
+        new anchor.BN(i).toArrayLike(Buffer, "le", 8)
+      ],
+      FACTORY_PROGRAM_ID
+    );
+    try {
+      const existingConfig = await (factoryProgram.account as any).tokenConfig.fetch(existingTokenConfigPda);
+      if (existingConfig.symbol.toUpperCase() === symbol.toUpperCase()) {
+        console.log(`\nSymbol "${symbol}" already exists - skipping token creation.`);
+        console.log(`  Existing token: ${existingConfig.name} (mint: ${existingConfig.mint.toString()})`);
+        return;
+      }
+    } catch (e) {
+      // Token config doesn't exist or error fetching, continue
+    }
+  }
+  console.log(`Symbol "${symbol}" is available.`);
+
   // Token creation parameters (matching Rust CreateTokenParams struct exactly)
   const createTokenParams = {
-    symbol: "ACME",
+    symbol: symbol,
     name: "Acme Corporation",
     decimals: 6,
     initialSupply: new anchor.BN(1_000_000_000_000), // 1 million tokens with 6 decimals
@@ -139,7 +165,7 @@ async function main() {
         tokenConfig: tokenConfigPda,
         multisig: multisigPda,
         mint: mintKeypair.publicKey,
-        authority: provider.wallet.publicKey,
+        payer: provider.wallet.publicKey,
         tokenProgram: TOKEN_2022_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })

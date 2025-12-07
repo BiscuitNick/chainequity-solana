@@ -2,6 +2,18 @@ use anchor_lang::prelude::*;
 use crate::state::{GovernanceAction, Vote, ProposalStatus};
 
 #[event]
+pub struct GovernanceConfigInitialized {
+    pub token_config: Pubkey,
+    pub governance_config: Pubkey,
+    pub min_proposal_threshold: u64,
+    pub voting_delay: u64,
+    pub voting_period: u64,
+    pub quorum_percentage: u8,
+    pub approval_threshold: u8,
+    pub slot: u64,
+}
+
+#[event]
 pub struct ProposalCreated {
     pub token_config: Pubkey,
     pub proposal: Pubkey,

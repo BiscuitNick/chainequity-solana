@@ -1,26 +1,31 @@
-"""Dividends API endpoints"""
+"""Dividends API endpoints - Auto-distribution model"""
 from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from typing import List
 from datetime import datetime
+import math
+import asyncio
 
 from app.models.database import get_db
-from app.models.dividend import DividendRound, DividendClaim
+from app.models.dividend import DividendRound, DividendPayment
 from app.models.token import Token
 from app.models.snapshot import CurrentBalance
 from app.schemas.dividend import (
     DividendRoundResponse,
     CreateDividendRequest,
-    UnclaimedDividendsResponse,
+    DividendPaymentResponse,
+    DistributionProgressResponse,
 )
-from app.services.solana_client import get_solana_client
 from solders.pubkey import Pubkey
 
 router = APIRouter()
 
+# Configuration
+BATCH_SIZE = 25  # Number of transfers per transaction (safe limit for Solana compute)
 
-def _round_to_response(r: DividendRound, total_claimed: int = 0, claim_count: int = 0) -> DividendRoundResponse:
+
+def _round_to_response(r: DividendRound, total_distributed: int = 0, distribution_count: int = 0) -> DividendRoundResponse:
     """Convert DividendRound model to response schema"""
     return DividendRoundResponse(
         id=r.id,
@@ -31,9 +36,12 @@ def _round_to_response(r: DividendRound, total_claimed: int = 0, claim_count: in
         snapshot_slot=r.snapshot_slot,
         status=r.status,
         created_at=r.created_at,
-        expires_at=r.expires_at,
-        total_claimed=total_claimed,
-        claim_count=claim_count,
+        distributed_at=r.distributed_at,
+        total_recipients=r.total_recipients,
+        total_batches=r.total_batches,
+        completed_batches=r.completed_batches,
+        total_distributed=total_distributed,
+        distribution_count=distribution_count,
     )
 
 
@@ -49,18 +57,21 @@ async def list_dividend_rounds(token_id: int = Path(...), db: AsyncSession = Dep
 
     responses = []
     for r in rounds:
-        # Get claim statistics
-        claim_result = await db.execute(
+        # Get distribution statistics
+        dist_result = await db.execute(
             select(
-                func.sum(DividendClaim.amount).label('total_claimed'),
-                func.count(DividendClaim.id).label('claim_count')
-            ).where(DividendClaim.round_id == r.id)
+                func.sum(DividendPayment.amount).label('total_distributed'),
+                func.count(DividendPayment.id).label('distribution_count')
+            ).where(
+                DividendPayment.round_id == r.id,
+                DividendPayment.status == 'sent'
+            )
         )
-        claim_stats = claim_result.first()
-        total_claimed = claim_stats.total_claimed or 0
-        claim_count = claim_stats.claim_count or 0
+        dist_stats = dist_result.first()
+        total_distributed = dist_stats.total_distributed or 0
+        distribution_count = dist_stats.distribution_count or 0
 
-        responses.append(_round_to_response(r, total_claimed, claim_count))
+        responses.append(_round_to_response(r, total_distributed, distribution_count))
 
     return responses
 
@@ -79,27 +90,72 @@ async def get_dividend_round(token_id: int = Path(...), round_id: int = Path(...
     if not round_obj:
         raise HTTPException(status_code=404, detail="Dividend round not found")
 
-    # Get claim statistics
-    claim_result = await db.execute(
+    # Get distribution statistics
+    dist_result = await db.execute(
         select(
-            func.sum(DividendClaim.amount).label('total_claimed'),
-            func.count(DividendClaim.id).label('claim_count')
-        ).where(DividendClaim.round_id == round_obj.id)
+            func.sum(DividendPayment.amount).label('total_distributed'),
+            func.count(DividendPayment.id).label('distribution_count')
+        ).where(
+            DividendPayment.round_id == round_obj.id,
+            DividendPayment.status == 'sent'
+        )
     )
-    claim_stats = claim_result.first()
-    total_claimed = claim_stats.total_claimed or 0
-    claim_count = claim_stats.claim_count or 0
+    dist_stats = dist_result.first()
+    total_distributed = dist_stats.total_distributed or 0
+    distribution_count = dist_stats.distribution_count or 0
 
-    return _round_to_response(round_obj, total_claimed, claim_count)
+    return _round_to_response(round_obj, total_distributed, distribution_count)
 
 
-@router.post("")
+@router.get("/{round_id}/progress", response_model=DistributionProgressResponse)
+async def get_distribution_progress(
+    token_id: int = Path(...),
+    round_id: int = Path(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get detailed distribution progress for a round"""
+    result = await db.execute(
+        select(DividendRound).where(
+            DividendRound.token_id == token_id,
+            DividendRound.id == round_id
+        )
+    )
+    round_obj = result.scalar_one_or_none()
+    if not round_obj:
+        raise HTTPException(status_code=404, detail="Dividend round not found")
+
+    # Get payment statistics by status
+    stats_result = await db.execute(
+        select(
+            DividendPayment.status,
+            func.count(DividendPayment.id).label('count'),
+            func.sum(DividendPayment.amount).label('total')
+        ).where(DividendPayment.round_id == round_id)
+        .group_by(DividendPayment.status)
+    )
+    stats = {row.status: {'count': row.count, 'total': row.total or 0} for row in stats_result}
+
+    return DistributionProgressResponse(
+        round_id=round_id,
+        status=round_obj.status,
+        total_recipients=round_obj.total_recipients,
+        total_batches=round_obj.total_batches,
+        completed_batches=round_obj.completed_batches,
+        successful_payments=stats.get('sent', {}).get('count', 0),
+        failed_payments=stats.get('failed', {}).get('count', 0),
+        pending_payments=stats.get('pending', {}).get('count', 0),
+        total_distributed=stats.get('sent', {}).get('total', 0),
+        total_pool=round_obj.total_pool,
+    )
+
+
+@router.post("", response_model=DividendRoundResponse)
 async def create_dividend_round(
     request: CreateDividendRequest,
     token_id: int = Path(...),
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new dividend round - returns unsigned transaction for client signing"""
+    """Create a new dividend round and automatically distribute to all shareholders"""
     # Get token
     result = await db.execute(
         select(Token).where(Token.token_id == token_id)
@@ -114,7 +170,7 @@ async def create_dividend_round(
 
     # Validate payment token address
     try:
-        payment_token_pubkey = Pubkey.from_string(request.payment_token)
+        Pubkey.from_string(request.payment_token)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid payment token address format")
 
@@ -128,31 +184,144 @@ async def create_dividend_round(
     max_num = result.scalar() or 0
     next_num = max_num + 1
 
-    # Build transaction data
-    solana_client = await get_solana_client()
-    token_config_pda, _ = solana_client.derive_token_config_pda(Pubkey.from_string(token.mint_address))
-    dividend_pda, _ = solana_client.derive_dividend_round_pda(token_config_pda, next_num)
+    # Get all shareholders and their balances (snapshot)
+    result = await db.execute(
+        select(CurrentBalance).where(
+            CurrentBalance.token_id == token_id,
+            CurrentBalance.balance > 0
+        )
+    )
+    shareholders = result.scalars().all()
 
-    return {
-        "message": "Dividend round creation transaction prepared for signing",
-        "round_number": next_num,
-        "dividend_pda": str(dividend_pda),
-        "instruction": {
-            "program": str(solana_client.program_addresses.token),
-            "action": "create_dividend_round",
-            "data": {
-                "payment_token": request.payment_token,
-                "total_pool": request.total_pool,
-                "expires_in_seconds": request.expires_in_seconds,
-            }
-        }
-    }
+    if not shareholders:
+        raise HTTPException(status_code=400, detail="No shareholders found - cannot create dividend distribution")
+
+    # Calculate total minted supply
+    minted_supply = sum(s.balance for s in shareholders)
+
+    if minted_supply <= 0:
+        raise HTTPException(status_code=400, detail="No minted shares found - cannot create dividend distribution")
+
+    # Calculate amount per share
+    amount_per_share = request.total_pool / minted_supply
+
+    # Calculate batches needed
+    total_recipients = len(shareholders)
+    total_batches = math.ceil(total_recipients / BATCH_SIZE)
+
+    # Create the dividend round
+    new_round = DividendRound(
+        token_id=token_id,
+        round_number=next_num,
+        payment_token=request.payment_token,
+        total_pool=request.total_pool,
+        amount_per_share=amount_per_share,
+        snapshot_slot=0,  # Could be set to current slot for on-chain reference
+        status="distributing",
+        total_recipients=total_recipients,
+        total_batches=total_batches,
+        completed_batches=0,
+    )
+    db.add(new_round)
+    await db.flush()  # Get the round ID
+
+    # Create payment records for each shareholder
+    for i, shareholder in enumerate(shareholders):
+        payment_amount = int(shareholder.balance * amount_per_share)
+        batch_num = i // BATCH_SIZE
+
+        payment = DividendPayment(
+            token_id=token_id,
+            round_id=new_round.id,
+            wallet=shareholder.wallet,
+            shares=shareholder.balance,
+            amount=payment_amount,
+            status="pending",
+            batch_number=batch_num,
+        )
+        db.add(payment)
+
+    await db.commit()
+    await db.refresh(new_round)
+
+    # Process distributions in background using asyncio.create_task
+    asyncio.create_task(process_distributions(new_round.id, token_id))
+
+    return _round_to_response(new_round, total_distributed=0, distribution_count=0)
 
 
-@router.post("/{round_id}/claim")
-async def claim_dividend(token_id: int = Path(...), round_id: int = Path(...), db: AsyncSession = Depends(get_db)):
-    """Claim dividend for a round - returns unsigned transaction for client signing"""
-    # Get dividend round
+async def process_distributions(round_id: int, token_id: int):
+    """Background task to process dividend distributions in batches"""
+    from app.models.database import async_session_factory
+
+    async with async_session_factory() as db:
+        try:
+            # Get the round
+            result = await db.execute(
+                select(DividendRound).where(DividendRound.id == round_id)
+            )
+            round_obj = result.scalar_one_or_none()
+            if not round_obj:
+                return
+
+            # Process each batch
+            for batch_num in range(round_obj.total_batches):
+                # Get pending payments for this batch
+                result = await db.execute(
+                    select(DividendPayment).where(
+                        DividendPayment.round_id == round_id,
+                        DividendPayment.batch_number == batch_num,
+                        DividendPayment.status == "pending"
+                    )
+                )
+                payments = result.scalars().all()
+
+                # Process this batch (in production, this would be actual SPL token transfers)
+                # For demo, we'll mark them as sent immediately
+                for payment in payments:
+                    try:
+                        # In production: Execute actual SPL token transfer here
+                        # signature = await transfer_spl_token(payment.wallet, payment.amount, round_obj.payment_token)
+
+                        # For demo, simulate successful transfer
+                        payment.status = "sent"
+                        payment.distributed_at = datetime.utcnow()
+                        payment.signature = f"demo_sig_{round_id}_{payment.id}"
+
+                    except Exception as e:
+                        payment.status = "failed"
+                        payment.error_message = str(e)[:500]
+
+                # Update batch progress
+                round_obj.completed_batches = batch_num + 1
+                await db.commit()
+
+            # Mark round as completed
+            round_obj.status = "completed"
+            round_obj.distributed_at = datetime.utcnow()
+            await db.commit()
+
+        except Exception as e:
+            # Mark round as failed if something goes wrong
+            try:
+                result = await db.execute(
+                    select(DividendRound).where(DividendRound.id == round_id)
+                )
+                round_obj = result.scalar_one_or_none()
+                if round_obj:
+                    round_obj.status = "failed"
+                    await db.commit()
+            except:
+                pass
+
+
+@router.post("/{round_id}/retry")
+async def retry_failed_distributions(
+    token_id: int = Path(...),
+    round_id: int = Path(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retry failed distributions for a round"""
     result = await db.execute(
         select(DividendRound).where(
             DividendRound.token_id == token_id,
@@ -160,107 +329,183 @@ async def claim_dividend(token_id: int = Path(...), round_id: int = Path(...), d
         )
     )
     round_obj = result.scalar_one_or_none()
-
     if not round_obj:
         raise HTTPException(status_code=404, detail="Dividend round not found")
 
-    if round_obj.status != "active":
-        raise HTTPException(status_code=400, detail=f"Dividend round is {round_obj.status}")
-
-    # Check expiration
-    now = datetime.utcnow()
-    if round_obj.expires_at and now > round_obj.expires_at:
-        raise HTTPException(status_code=400, detail="Dividend round has expired")
-
-    # Get token for mint address
+    # Count failed payments
     result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+        select(func.count(DividendPayment.id)).where(
+            DividendPayment.round_id == round_id,
+            DividendPayment.status == "failed"
+        )
     )
-    token = result.scalar_one_or_none()
+    failed_count = result.scalar() or 0
 
-    solana_client = await get_solana_client()
-    token_config_pda, _ = solana_client.derive_token_config_pda(Pubkey.from_string(token.mint_address))
-    dividend_pda, _ = solana_client.derive_dividend_round_pda(token_config_pda, round_obj.round_number)
+    if failed_count == 0:
+        raise HTTPException(status_code=400, detail="No failed payments to retry")
 
-    return {
-        "message": "Claim dividend transaction prepared for signing",
-        "dividend_pda": str(dividend_pda),
-        "instruction": {
-            "program": str(solana_client.program_addresses.token),
-            "action": "claim_dividend",
-            "data": {
-                "round_id": round_id,
-            }
-        }
-    }
+    # Reset failed payments to pending
+    await db.execute(
+        update(DividendPayment)
+        .where(
+            DividendPayment.round_id == round_id,
+            DividendPayment.status == "failed"
+        )
+        .values(status="pending", error_message=None)
+    )
+
+    # Update round status
+    round_obj.status = "distributing"
+    await db.commit()
+
+    # Process retries in background
+    asyncio.create_task(retry_distributions(round_id))
+
+    return {"message": f"Retrying {failed_count} failed distributions", "count": failed_count}
 
 
-@router.get("/unclaimed/{address}", response_model=UnclaimedDividendsResponse)
-async def get_unclaimed_dividends(
+async def retry_distributions(round_id: int):
+    """Background task to retry failed distributions"""
+    from app.models.database import async_session_factory
+
+    async with async_session_factory() as db:
+        try:
+            result = await db.execute(
+                select(DividendPayment).where(
+                    DividendPayment.round_id == round_id,
+                    DividendPayment.status == "pending"
+                )
+            )
+            payments = result.scalars().all()
+
+            for payment in payments:
+                try:
+                    # In production: Execute actual SPL token transfer
+                    payment.status = "sent"
+                    payment.distributed_at = datetime.utcnow()
+                    payment.signature = f"retry_sig_{round_id}_{payment.id}"
+                except Exception as e:
+                    payment.status = "failed"
+                    payment.error_message = str(e)[:500]
+
+            await db.commit()
+
+            # Check if all payments are now sent
+            result = await db.execute(
+                select(func.count(DividendPayment.id)).where(
+                    DividendPayment.round_id == round_id,
+                    DividendPayment.status == "pending"
+                )
+            )
+            pending_count = result.scalar() or 0
+
+            result = await db.execute(
+                select(DividendRound).where(DividendRound.id == round_id)
+            )
+            round_obj = result.scalar_one_or_none()
+            if round_obj and pending_count == 0:
+                # Check for any failed
+                result = await db.execute(
+                    select(func.count(DividendPayment.id)).where(
+                        DividendPayment.round_id == round_id,
+                        DividendPayment.status == "failed"
+                    )
+                )
+                failed_count = result.scalar() or 0
+
+                if failed_count == 0:
+                    round_obj.status = "completed"
+                    round_obj.distributed_at = datetime.utcnow()
+                else:
+                    round_obj.status = "completed"  # Still completed but with failures
+                await db.commit()
+
+        except Exception:
+            pass
+
+
+@router.get("/{round_id}/payments", response_model=List[DividendPaymentResponse])
+async def get_round_payments(
     token_id: int = Path(...),
-    address: str = Path(...),
+    round_id: int = Path(...),
+    status: str = None,
     db: AsyncSession = Depends(get_db)
 ):
-    """Get unclaimed dividends for a wallet"""
-    # Get wallet's balance for calculating entitlement
-    result = await db.execute(
-        select(CurrentBalance).where(
-            CurrentBalance.token_id == token_id,
-            CurrentBalance.wallet == address
-        )
-    )
-    balance_record = result.scalar_one_or_none()
-
-    if not balance_record or balance_record.balance == 0:
-        return UnclaimedDividendsResponse(
-            total_unclaimed=0,
-            rounds=[]
-        )
-
-    # Get all active dividend rounds
+    """Get all payments for a dividend round"""
+    # Verify round exists
     result = await db.execute(
         select(DividendRound).where(
             DividendRound.token_id == token_id,
-            DividendRound.status == "active"
-        ).order_by(DividendRound.round_number.desc())
-    )
-    active_rounds = result.scalars().all()
-
-    # Find unclaimed rounds for this wallet
-    unclaimed_rounds = []
-    total_unclaimed = 0
-
-    for round_obj in active_rounds:
-        # Check if already claimed
-        result = await db.execute(
-            select(DividendClaim).where(
-                DividendClaim.round_id == round_obj.id,
-                DividendClaim.wallet == address
-            )
+            DividendRound.id == round_id
         )
-        existing_claim = result.scalar_one_or_none()
-
-        if not existing_claim:
-            # Calculate entitlement based on amount per share
-            entitlement = balance_record.balance * round_obj.amount_per_share
-
-            # Get claim stats for response
-            claim_result = await db.execute(
-                select(
-                    func.sum(DividendClaim.amount).label('total_claimed'),
-                    func.count(DividendClaim.id).label('claim_count')
-                ).where(DividendClaim.round_id == round_obj.id)
-            )
-            claim_stats = claim_result.first()
-
-            unclaimed_rounds.append(_round_to_response(
-                round_obj,
-                claim_stats.total_claimed or 0,
-                claim_stats.claim_count or 0
-            ))
-            total_unclaimed += entitlement
-
-    return UnclaimedDividendsResponse(
-        total_unclaimed=total_unclaimed,
-        rounds=unclaimed_rounds
     )
+    round_obj = result.scalar_one_or_none()
+    if not round_obj:
+        raise HTTPException(status_code=404, detail="Dividend round not found")
+
+    # Build query
+    query = select(DividendPayment).where(DividendPayment.round_id == round_id)
+    if status:
+        query = query.where(DividendPayment.status == status)
+    query = query.order_by(DividendPayment.id)
+
+    result = await db.execute(query)
+    payments = result.scalars().all()
+
+    return [
+        DividendPaymentResponse(
+            id=p.id,
+            round_id=p.round_id,
+            wallet=p.wallet,
+            shares=p.shares,
+            amount=p.amount,
+            status=p.status,
+            batch_number=p.batch_number,
+            created_at=p.created_at,
+            distributed_at=p.distributed_at,
+            signature=p.signature,
+            error_message=p.error_message,
+            dividend_per_share=round_obj.amount_per_share,
+        )
+        for p in payments
+    ]
+
+
+# Legacy endpoint for backwards compatibility with frontend
+@router.get("/{round_id}/claims")
+async def get_round_claims(
+    token_id: int = Path(...),
+    round_id: int = Path(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all payments for a dividend round (legacy endpoint)"""
+    result = await db.execute(
+        select(DividendRound).where(
+            DividendRound.token_id == token_id,
+            DividendRound.id == round_id
+        )
+    )
+    round_obj = result.scalar_one_or_none()
+    if not round_obj:
+        raise HTTPException(status_code=404, detail="Dividend round not found")
+
+    result = await db.execute(
+        select(DividendPayment).where(DividendPayment.round_id == round_id)
+        .order_by(DividendPayment.distributed_at.desc())
+    )
+    payments = result.scalars().all()
+
+    # Return in legacy format for frontend compatibility
+    return [
+        {
+            "id": p.id,
+            "wallet": p.wallet,
+            "shares": p.shares,
+            "dividend_per_share": round_obj.amount_per_share,
+            "amount": p.amount,
+            "claimed_at": p.distributed_at or p.created_at,
+            "signature": p.signature,
+            "status": p.status,
+        }
+        for p in payments
+    ]

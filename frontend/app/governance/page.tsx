@@ -3,9 +3,30 @@
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useAppStore } from '@/stores/useAppStore'
-import { Plus, ThumbsUp, ThumbsDown, Clock, CheckCircle, XCircle, RefreshCw } from 'lucide-react'
+import { Plus, ThumbsUp, ThumbsDown, Minus, Clock, CheckCircle, XCircle, RefreshCw, Vote } from 'lucide-react'
 import { api, Proposal } from '@/lib/api'
+
+// Governance action types
+const GOVERNANCE_ACTIONS = [
+  { value: 'add_to_allowlist', label: 'Add to Allowlist', requiresWallet: true },
+  { value: 'remove_from_allowlist', label: 'Remove from Allowlist', requiresWallet: true },
+  { value: 'update_daily_limit', label: 'Update Daily Transfer Limit', requiresWallet: true, requiresAmount: true },
+  { value: 'update_global_limit', label: 'Update Global Transfer Limit', requiresAmount: true },
+  { value: 'initiate_dividend', label: 'Initiate Dividend', requiresAmount: true, requiresToken: true },
+  { value: 'stock_split', label: 'Stock Split', requiresMultiplier: true },
+  { value: 'symbol_change', label: 'Change Symbol', requiresSymbol: true },
+  { value: 'pause_transfers', label: 'Pause Transfers' },
+  { value: 'unpause_transfers', label: 'Unpause Transfers' },
+  { value: 'add_multisig_signer', label: 'Add Multisig Signer', requiresWallet: true },
+  { value: 'remove_multisig_signer', label: 'Remove Multisig Signer', requiresWallet: true },
+  { value: 'update_threshold', label: 'Update Multisig Threshold', requiresThreshold: true },
+]
 
 export default function GovernancePage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
@@ -14,6 +35,19 @@ export default function GovernancePage() {
   const [proposals, setProposals] = useState<Proposal[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [votingPower, setVotingPower] = useState<number>(0)
+
+  // Create proposal form state
+  const [actionType, setActionType] = useState('')
+  const [description, setDescription] = useState('')
+  const [wallet, setWallet] = useState('')
+  const [amount, setAmount] = useState('')
+  const [paymentToken, setPaymentToken] = useState('')
+  const [multiplier, setMultiplier] = useState('2')
+  const [newSymbol, setNewSymbol] = useState('')
+  const [threshold, setThreshold] = useState('2')
+  const [votingPeriodDays, setVotingPeriodDays] = useState('3')
+  const [submitting, setSubmitting] = useState(false)
 
   const fetchProposals = async () => {
     if (!selectedToken) return
@@ -35,16 +69,67 @@ export default function GovernancePage() {
     fetchProposals()
   }, [selectedToken, filter])
 
-  const handleVote = async (proposalId: number, voteFor: boolean) => {
+  const handleVote = async (proposalId: number, voteType: 'for' | 'against' | 'abstain') => {
     if (!selectedToken) return
     try {
-      await api.vote(selectedToken.tokenId, proposalId, voteFor)
+      await api.vote(selectedToken.tokenId, proposalId, voteType === 'for')
       fetchProposals()
     } catch (e: any) {
       console.error('Failed to vote:', e)
       setError(e.detail || 'Failed to vote')
     }
   }
+
+  const resetForm = () => {
+    setActionType('')
+    setDescription('')
+    setWallet('')
+    setAmount('')
+    setPaymentToken('')
+    setMultiplier('2')
+    setNewSymbol('')
+    setThreshold('2')
+    setVotingPeriodDays('3')
+  }
+
+  const handleCreateProposal = async () => {
+    if (!selectedToken || !actionType || !description) return
+
+    setSubmitting(true)
+    setError(null)
+
+    const selectedAction = GOVERNANCE_ACTIONS.find(a => a.value === actionType)
+    if (!selectedAction) return
+
+    // Build action_data based on action type
+    const actionData: Record<string, any> = {}
+    if (selectedAction.requiresWallet) actionData.wallet = wallet
+    if (selectedAction.requiresAmount) actionData.amount = parseInt(amount) || 0
+    if (selectedAction.requiresToken) actionData.token = paymentToken
+    if (selectedAction.requiresMultiplier) actionData.multiplier = parseInt(multiplier) || 2
+    if (selectedAction.requiresSymbol) actionData.new_symbol = newSymbol
+    if (selectedAction.requiresThreshold) actionData.new_threshold = parseInt(threshold) || 2
+
+    try {
+      await api.createProposal(selectedToken.tokenId, {
+        title: `${selectedAction.label} Proposal`,
+        description,
+        action_type: actionType,
+        action_data: actionData,
+        voting_period_days: parseInt(votingPeriodDays) || 3,
+      })
+      setShowCreateModal(false)
+      resetForm()
+      fetchProposals()
+    } catch (e: any) {
+      console.error('Failed to create proposal:', e)
+      setError(e.detail || 'Failed to create proposal')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const selectedAction = GOVERNANCE_ACTIONS.find(a => a.value === actionType)
 
   const handleExecute = async (proposalId: number) => {
     if (!selectedToken) return
@@ -114,6 +199,26 @@ export default function GovernancePage() {
         <Card className="border-red-500/50 bg-red-500/10">
           <CardContent className="pt-4">
             <p className="text-red-500">{error}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Voting Power Card */}
+      {votingPower > 0 && (
+        <Card className="border-primary/50 bg-primary/5">
+          <CardContent className="pt-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Vote className="h-8 w-8 text-primary" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Your Voting Power</p>
+                  <p className="text-2xl font-bold">{votingPower.toLocaleString()} votes</p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Based on your {selectedToken?.symbol} balance
+              </p>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -249,7 +354,7 @@ export default function GovernancePage() {
                         <Button
                           size="sm"
                           className="bg-green-500 hover:bg-green-600"
-                          onClick={() => handleVote(proposal.id, true)}
+                          onClick={() => handleVote(proposal.id, 'for')}
                         >
                           <ThumbsUp className="h-3 w-3 mr-1" />
                           Vote For
@@ -258,10 +363,18 @@ export default function GovernancePage() {
                           size="sm"
                           variant="outline"
                           className="text-red-500 border-red-500 hover:bg-red-500/10"
-                          onClick={() => handleVote(proposal.id, false)}
+                          onClick={() => handleVote(proposal.id, 'against')}
                         >
                           <ThumbsDown className="h-3 w-3 mr-1" />
                           Vote Against
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleVote(proposal.id, 'abstain')}
+                        >
+                          <Minus className="h-3 w-3 mr-1" />
+                          Abstain
                         </Button>
                       </div>
                     )}
@@ -280,6 +393,171 @@ export default function GovernancePage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Create Proposal Modal */}
+      <Dialog open={showCreateModal} onOpenChange={(open) => { setShowCreateModal(open); if (!open) resetForm(); }}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Create Governance Proposal</DialogTitle>
+            <DialogDescription>
+              Create a new proposal for {selectedToken?.symbol} token holders to vote on.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="action-type">Action Type</Label>
+              <Select value={actionType} onValueChange={setActionType}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select an action..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {GOVERNANCE_ACTIONS.map((action) => (
+                    <SelectItem key={action.value} value={action.value}>
+                      {action.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                placeholder="Describe the proposal and its rationale..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={3}
+              />
+            </div>
+
+            {selectedAction?.requiresWallet && (
+              <div className="space-y-2">
+                <Label htmlFor="wallet">Wallet Address</Label>
+                <Input
+                  id="wallet"
+                  placeholder="Enter wallet address..."
+                  value={wallet}
+                  onChange={(e) => setWallet(e.target.value)}
+                />
+              </div>
+            )}
+
+            {selectedAction?.requiresAmount && (
+              <div className="space-y-2">
+                <Label htmlFor="amount">Amount</Label>
+                <Input
+                  id="amount"
+                  type="number"
+                  placeholder="Enter amount..."
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                />
+              </div>
+            )}
+
+            {selectedAction?.requiresToken && (
+              <div className="space-y-2">
+                <Label htmlFor="payment-token">Payment Token Address</Label>
+                <Input
+                  id="payment-token"
+                  placeholder="Enter payment token mint address..."
+                  value={paymentToken}
+                  onChange={(e) => setPaymentToken(e.target.value)}
+                />
+              </div>
+            )}
+
+            {selectedAction?.requiresMultiplier && (
+              <div className="space-y-2">
+                <Label htmlFor="multiplier">Split Multiplier</Label>
+                <Select value={multiplier} onValueChange={setMultiplier}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[2, 3, 4, 5, 7, 10].map((m) => (
+                      <SelectItem key={m} value={m.toString()}>
+                        {m}-for-1 split
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {selectedAction?.requiresSymbol && (
+              <div className="space-y-2">
+                <Label htmlFor="new-symbol">New Symbol</Label>
+                <Input
+                  id="new-symbol"
+                  placeholder="Enter new symbol (max 10 chars)..."
+                  value={newSymbol}
+                  onChange={(e) => setNewSymbol(e.target.value.toUpperCase().slice(0, 10))}
+                  maxLength={10}
+                />
+              </div>
+            )}
+
+            {selectedAction?.requiresThreshold && (
+              <div className="space-y-2">
+                <Label htmlFor="threshold">New Threshold</Label>
+                <Select value={threshold} onValueChange={setThreshold}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[1, 2, 3, 4, 5].map((t) => (
+                      <SelectItem key={t} value={t.toString()}>
+                        {t} signature{t > 1 ? 's' : ''} required
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="voting-period">Voting Period</Label>
+              <Select value={votingPeriodDays} onValueChange={setVotingPeriodDays}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1 day</SelectItem>
+                  <SelectItem value="3">3 days</SelectItem>
+                  <SelectItem value="5">5 days</SelectItem>
+                  <SelectItem value="7">7 days</SelectItem>
+                  <SelectItem value="14">14 days</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateModal(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateProposal}
+              disabled={!actionType || !description || submitting}
+            >
+              {submitting ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <Vote className="h-4 w-4 mr-2" />
+                  Create Proposal
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

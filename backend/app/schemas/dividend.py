@@ -9,26 +9,54 @@ class DividendRoundResponse(BaseModel):
     round_number: int
     payment_token: str
     total_pool: int
-    amount_per_share: int
+    amount_per_share: float
     snapshot_slot: int
     status: str
     created_at: datetime
-    expires_at: Optional[datetime] = None
-    total_claimed: int = 0
-    claim_count: int = 0
+    distributed_at: Optional[datetime] = None
+    total_recipients: int = 0
+    total_batches: int = 0
+    completed_batches: int = 0
+    # Computed fields for compatibility
+    total_distributed: int = 0  # Total amount distributed so far
+    distribution_count: int = 0  # Number of successful distributions
 
 
 class CreateDividendRequest(BaseModel):
     payment_token: str
     total_pool: int
-    expires_in_seconds: Optional[int] = None
 
 
-class DividendClaimResponse(BaseModel):
+class DividendPaymentResponse(BaseModel):
+    id: int
     round_id: int
     wallet: str
+    shares: int
     amount: int
-    claimed_at: datetime
+    status: str
+    batch_number: int
+    created_at: datetime
+    distributed_at: Optional[datetime] = None
+    signature: Optional[str] = None
+    error_message: Optional[str] = None
+    dividend_per_share: float = 0  # Added for display
+
+
+class DistributionProgressResponse(BaseModel):
+    round_id: int
+    status: str
+    total_recipients: int
+    total_batches: int
+    completed_batches: int
+    successful_payments: int
+    failed_payments: int
+    pending_payments: int
+    total_distributed: int
+    total_pool: int
+
+
+# Legacy alias for backwards compatibility
+DividendClaimResponse = DividendPaymentResponse
 
 
 class UnclaimedDividendsResponse(BaseModel):

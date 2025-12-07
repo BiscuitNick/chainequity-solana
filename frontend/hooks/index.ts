@@ -15,7 +15,7 @@ export {
   useVestingSchedules,
   useReleaseVesting,
   useDividendRounds,
-  useClaimDividend,
+  useRetryFailedDistributions,
   useProposals,
   useVote,
   useMultiSigInfo,

@@ -14,6 +14,14 @@ declare_id!("qonFMa4fD9KLRWG73aQzvQ2d5WnBNF5S9jzaRwLcwQQ");
 pub mod chainequity_governance {
     use super::*;
 
+    /// Initialize governance configuration for a token
+    pub fn initialize_governance(
+        ctx: Context<InitializeGovernance>,
+        params: InitializeGovernanceParams,
+    ) -> Result<()> {
+        instructions::initialize::initialize_handler(ctx, params)
+    }
+
     /// Create a governance proposal
     pub fn create_proposal(
         ctx: Context<CreateProposal>,
@@ -29,6 +37,14 @@ pub mod chainequity_governance {
         vote_choice: VoteChoice,
     ) -> Result<()> {
         instructions::vote::handler(ctx, vote_choice)
+    }
+
+    /// Finalize a proposal after voting ends (determine passed/failed)
+    pub fn finalize_proposal(
+        ctx: Context<FinalizeProposal>,
+        total_supply: u64,
+    ) -> Result<()> {
+        instructions::finalize::finalize_handler(ctx, total_supply)
     }
 
     /// Execute a passed proposal

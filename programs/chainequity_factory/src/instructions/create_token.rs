@@ -93,7 +93,7 @@ pub struct CreateToken<'info> {
         seeds = [FACTORY_SEED],
         bump = factory.bump,
     )]
-    pub factory: Account<'info, TokenFactory>,
+    pub factory: Box<Account<'info, TokenFactory>>,
 
     #[account(
         init,
@@ -102,7 +102,7 @@ pub struct CreateToken<'info> {
         seeds = [TOKEN_CONFIG_SEED, factory.key().as_ref(), &factory.token_count.to_le_bytes()],
         bump
     )]
-    pub token_config: Account<'info, TokenConfig>,
+    pub token_config: Box<Account<'info, TokenConfig>>,
 
     #[account(
         init,
@@ -111,7 +111,7 @@ pub struct CreateToken<'info> {
         seeds = [MULTISIG_SEED, token_config.key().as_ref()],
         bump
     )]
-    pub multisig: Account<'info, MultisigConfig>,
+    pub multisig: Box<Account<'info, MultisigConfig>>,
 
     /// The mint account for the new token (Token-2022)
     #[account(

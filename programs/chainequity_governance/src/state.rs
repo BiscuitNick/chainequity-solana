@@ -123,7 +123,7 @@ impl GovernanceAction {
     pub const LEN: usize = 1 + 32 + 8 + 10; // Enum variant + largest payload
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Default)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Default, Debug)]
 pub enum ProposalStatus {
     #[default]
     Pending,

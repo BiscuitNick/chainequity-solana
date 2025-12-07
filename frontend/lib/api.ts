@@ -193,22 +193,35 @@ class ApiClient {
     })
   }
 
-  // Dividend endpoints
+  // Dividend endpoints (Auto-distribution model)
   async getDividendRounds(tokenId: number) {
     return this.request<DividendRound[]>(`/tokens/${tokenId}/dividends`)
   }
 
   async createDividendRound(tokenId: number, data: CreateDividendRequest) {
-    return this.request<any>(`/tokens/${tokenId}/dividends`, {
+    return this.request<DividendRound>(`/tokens/${tokenId}/dividends`, {
       method: 'POST',
       body: JSON.stringify(data),
     })
   }
 
-  async claimDividend(tokenId: number, roundId: number) {
-    return this.request<any>(`/tokens/${tokenId}/dividends/${roundId}/claim`, {
+  async getDistributionProgress(tokenId: number, roundId: number) {
+    return this.request<DistributionProgress>(`/tokens/${tokenId}/dividends/${roundId}/progress`)
+  }
+
+  async getDividendPayments(tokenId: number, roundId: number) {
+    return this.request<DividendPayment[]>(`/tokens/${tokenId}/dividends/${roundId}/payments`)
+  }
+
+  async retryFailedDistributions(tokenId: number, roundId: number) {
+    return this.request<{ message: string; count: number }>(`/tokens/${tokenId}/dividends/${roundId}/retry`, {
       method: 'POST',
     })
+  }
+
+  // Legacy endpoint for backwards compatibility
+  async getDividendClaims(tokenId: number, roundId: number) {
+    return this.request<DividendClaim[]>(`/tokens/${tokenId}/dividends/${roundId}/claims`)
   }
 
   // Governance endpoints
@@ -235,6 +248,10 @@ class ApiClient {
     return this.request<any>(`/tokens/${tokenId}/governance/proposals/${proposalId}/execute`, {
       method: 'POST',
     })
+  }
+
+  async getVotingPower(tokenId: number, address: string) {
+    return this.request<VotingPowerResponse>(`/tokens/${tokenId}/governance/voting-power/${address}`)
   }
 
   // Admin endpoints
@@ -451,17 +468,55 @@ export interface DividendRound {
   total_pool: number
   amount_per_share: number
   snapshot_slot: number
-  status: string
+  status: 'pending' | 'distributing' | 'completed' | 'failed'
   created_at: string
-  expires_at?: string
-  total_claimed: number
-  claim_count: number
+  distributed_at?: string
+  total_recipients: number
+  total_batches: number
+  completed_batches: number
+  total_distributed: number
+  distribution_count: number
+}
+
+export interface DividendPayment {
+  id: number
+  round_id: number
+  wallet: string
+  shares: number
+  amount: number
+  status: 'pending' | 'sent' | 'failed'
+  batch_number: number
+  created_at: string
+  distributed_at?: string
+  signature?: string
+  error_message?: string
+  dividend_per_share: number
+}
+
+// Legacy alias for backwards compatibility
+export type DividendClaim = DividendPayment
+
+export interface DistributionProgress {
+  round_id: number
+  status: string
+  total_recipients: number
+  total_batches: number
+  completed_batches: number
+  successful_payments: number
+  failed_payments: number
+  pending_payments: number
+  total_distributed: number
+  total_pool: number
 }
 
 export interface CreateDividendRequest {
   total_pool: number
   payment_token: string
-  expires_at?: string
+}
+
+export interface UnclaimedDividendsResponse {
+  total_unclaimed: number
+  rounds: DividendRound[]
 }
 
 export interface Proposal {
@@ -489,6 +544,13 @@ export interface CreateProposalRequest {
   action_type: string
   action_data?: Record<string, any>
   voting_period_days: number
+}
+
+export interface VotingPowerResponse {
+  address: string
+  balance: number
+  voting_power: number
+  delegated_to?: string | null
 }
 
 export interface MultiSigConfigResponse {

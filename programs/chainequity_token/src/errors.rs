@@ -72,6 +72,12 @@ pub enum TokenError {
     #[msg("No dividend entitlement")]
     NoEntitlement,
 
+    #[msg("Insufficient funds in source account")]
+    InsufficientFunds,
+
+    #[msg("Insufficient funds in dividend pool")]
+    InsufficientPoolFunds,
+
     // Corporate action errors
     #[msg("Invalid split ratio")]
     InvalidSplitRatio,

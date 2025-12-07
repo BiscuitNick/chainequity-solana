@@ -174,26 +174,26 @@ export function useDividendRounds(tokenId: number | null) {
   )
 }
 
-export function useClaimDividend(tokenId: number | null) {
+export function useRetryFailedDistributions(tokenId: number | null) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const claimDividend = async (roundId: number) => {
+  const retryFailed = async (roundId: number) => {
     if (tokenId === null || tokenId === undefined) return null
     setLoading(true)
     setError(null)
     try {
-      const result = await api.claimDividend(tokenId, roundId)
+      const result = await api.retryFailedDistributions(tokenId, roundId)
       return result
     } catch (e: any) {
-      setError(e.detail || e.message || 'Failed to claim dividend')
+      setError(e.detail || e.message || 'Failed to retry distributions')
       throw e
     } finally {
       setLoading(false)
     }
   }
 
-  return { claimDividend, loading, error }
+  return { retryFailed, loading, error }
 }
 
 // Governance hooks

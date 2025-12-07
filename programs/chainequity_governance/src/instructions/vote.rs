@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_spl::token_interface::TokenAccount;
 use crate::state::{Proposal, VoteRecord, Vote, ProposalStatus, PROPOSAL_SEED, VOTE_RECORD_SEED};
 use crate::errors::GovernanceError;
 use crate::events::VoteCast;
@@ -21,6 +22,13 @@ pub struct CastVote<'info> {
     )]
     pub vote_record: Account<'info, VoteRecord>,
 
+    /// Voter's token account - used to determine voting weight
+    /// The token account must be owned by the voter
+    #[account(
+        token::authority = voter,
+    )]
+    pub voter_token_account: InterfaceAccount<'info, TokenAccount>,
+
     #[account(mut)]
     pub voter: Signer<'info>,
 
@@ -42,8 +50,11 @@ pub fn handler(ctx: Context<CastVote>, vote: Vote) -> Result<()> {
 
     require!(proposal.status == ProposalStatus::Active, GovernanceError::ProposalNotActive);
 
-    // For demo, use fixed weight. In production, query token balance at snapshot
-    let weight: u64 = 1000;
+    // Get voting weight from token balance
+    // In a production system with historical snapshots, this would query the balance
+    // at the proposal's snapshot_slot. For now, we use current balance.
+    let weight = ctx.accounts.voter_token_account.amount;
+    require!(weight > 0, GovernanceError::InsufficientTokens);
 
     // Record vote
     match vote {
