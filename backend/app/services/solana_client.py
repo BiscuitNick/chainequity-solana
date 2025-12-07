@@ -267,6 +267,8 @@ async def get_solana_client() -> SolanaClient:
     global _solana_client
     if _solana_client is None:
         _solana_client = SolanaClient()
+    # Always ensure connection is established (reconnect if disconnected)
+    if _solana_client._client is None:
         await _solana_client.connect()
     return _solana_client
 

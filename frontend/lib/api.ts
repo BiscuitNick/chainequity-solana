@@ -71,7 +71,7 @@ class ApiClient {
 
   // Token endpoints
   async listTokens(skip = 0, limit = 20) {
-    return this.request<TokenListResponse[]>(`/tokens?skip=${skip}&limit=${limit}`)
+    return this.request<TokenListResponse[]>(`/tokens/?skip=${skip}&limit=${limit}`)
   }
 
   async getTokenInfo(tokenId: number) {
