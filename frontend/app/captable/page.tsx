@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/useAppStore'
-import { Download, PieChart, RefreshCw } from 'lucide-react'
+import { Download, PieChart, RefreshCw, Copy, Check } from 'lucide-react'
 import { api, CapTableResponse, CapTableEntry } from '@/lib/api'
 
 export default function CapTablePage() {
@@ -12,6 +12,13 @@ export default function CapTablePage() {
   const [capTable, setCapTable] = useState<CapTableResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [copiedWallet, setCopiedWallet] = useState<string | null>(null)
+
+  const copyToClipboard = async (wallet: string) => {
+    await navigator.clipboard.writeText(wallet)
+    setCopiedWallet(wallet)
+    setTimeout(() => setCopiedWallet(null), 2000)
+  }
 
   const fetchCapTable = async () => {
     if (!selectedToken) return
@@ -243,16 +250,40 @@ export default function CapTablePage() {
                     <th className="text-right py-3 px-4 font-medium">Balance</th>
                     <th className="text-right py-3 px-4 font-medium">Ownership %</th>
                     <th className="text-right py-3 px-4 font-medium">Vested</th>
+                    <th className="text-right py-3 px-4 font-medium">Unvested</th>
+                    <th className="text-right py-3 px-4 font-medium">% Vested</th>
                     <th className="text-right py-3 px-4 font-medium">Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {holders.map((holder, idx) => (
+                  {holders.map((holder, idx) => {
+                    const totalVesting = holder.vested + holder.unvested
+                    const vestedPercent = totalVesting > 0 ? (holder.vested / totalVesting) * 100 : 0
+                    return (
                     <tr key={idx} className="border-b hover:bg-muted/50">
-                      <td className="py-3 px-4 font-mono text-sm">{holder.wallet}</td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-sm">{holder.wallet}</span>
+                          <button
+                            onClick={() => copyToClipboard(holder.wallet)}
+                            className="p-1 hover:bg-muted rounded transition-colors"
+                            title="Copy wallet address"
+                          >
+                            {copiedWallet === holder.wallet ? (
+                              <Check className="h-3.5 w-3.5 text-green-500" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                            )}
+                          </button>
+                        </div>
+                      </td>
                       <td className="py-3 px-4 text-right font-medium">{holder.balance.toLocaleString()}</td>
                       <td className="py-3 px-4 text-right">{holder.ownership_pct.toFixed(4)}%</td>
-                      <td className="py-3 px-4 text-right text-muted-foreground">{holder.vested.toLocaleString()}</td>
+                      <td className="py-3 px-4 text-right text-green-500">{holder.vested.toLocaleString()}</td>
+                      <td className="py-3 px-4 text-right text-yellow-500">{holder.unvested.toLocaleString()}</td>
+                      <td className="py-3 px-4 text-right">
+                        {totalVesting > 0 ? `${vestedPercent.toFixed(1)}%` : '—'}
+                      </td>
                       <td className="py-3 px-4 text-right">
                         <span className={`px-2 py-1 rounded text-xs ${
                           holder.status === 'active' ? 'bg-green-500/10 text-green-500' : 'bg-gray-500/10 text-gray-500'
@@ -261,7 +292,8 @@ export default function CapTablePage() {
                         </span>
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

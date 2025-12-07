@@ -432,8 +432,8 @@ export interface CreateVestingRequest {
   beneficiary: string
   total_amount: number
   start_time: number
-  cliff_duration: number
-  total_duration: number
+  cliff_seconds: number
+  duration_seconds: number
   vesting_type: string
   revocable: boolean
 }

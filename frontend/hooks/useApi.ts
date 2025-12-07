@@ -11,8 +11,8 @@ import api, {
   VestingSchedule,
   DividendRound,
   Proposal,
-  MultiSigInfo,
-  PendingTransaction,
+  MultiSigConfigResponse,
+  PendingTransactionResponse,
 } from '@/lib/api'
 import { useAppStore } from '@/stores/useAppStore'
 
@@ -231,7 +231,7 @@ export function useVote(tokenId: number | null) {
 
 // Admin hooks
 export function useMultiSigInfo(tokenId: number | null) {
-  return useApiCall<MultiSigInfo | null>(
+  return useApiCall<MultiSigConfigResponse | null>(
     async () => {
       if (tokenId === null || tokenId === undefined) return null
       return api.getMultiSigInfo(tokenId)
@@ -241,7 +241,7 @@ export function useMultiSigInfo(tokenId: number | null) {
 }
 
 export function usePendingTransactions(tokenId: number | null) {
-  return useApiCall<PendingTransaction[]>(
+  return useApiCall<PendingTransactionResponse[]>(
     async () => {
       if (tokenId === null || tokenId === undefined) return []
       return api.getPendingTransactions(tokenId)
@@ -254,7 +254,7 @@ export function useApproveTransaction(tokenId: number | null) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const approve = async (txId: number) => {
+  const approve = async (txId: string) => {
     if (tokenId === null || tokenId === undefined) return null
     setLoading(true)
     setError(null)

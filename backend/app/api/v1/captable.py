@@ -25,6 +25,43 @@ from app.services.solana_client import get_solana_client
 router = APIRouter()
 
 
+async def _update_balance(db: AsyncSession, token_id: int, wallet: str, amount: int):
+    """Update or create a balance record for a wallet"""
+    result = await db.execute(
+        select(CurrentBalance).where(
+            CurrentBalance.token_id == token_id,
+            CurrentBalance.wallet == wallet
+        )
+    )
+    balance = result.scalar_one_or_none()
+
+    if balance:
+        balance.balance += amount
+        balance.last_updated_slot = 0
+        balance.updated_at = datetime.utcnow()
+    else:
+        balance = CurrentBalance(
+            token_id=token_id,
+            wallet=wallet,
+            balance=amount,
+            last_updated_slot=0,
+        )
+        db.add(balance)
+
+
+async def _auto_release_vested(db: AsyncSession, token_id: int, schedule: VestingSchedule):
+    """Auto-release any newly vested tokens to the beneficiary's balance"""
+    now = datetime.utcnow()
+    vested = schedule.calculate_vested(now)
+    releasable = vested - schedule.released_amount
+
+    if releasable > 0:
+        # Update released amount
+        schedule.released_amount = vested
+        # Credit to beneficiary's cap table balance
+        await _update_balance(db, token_id, schedule.beneficiary, releasable)
+
+
 async def _build_captable(
     token_id: int,
     db: AsyncSession,
@@ -86,15 +123,33 @@ async def _build_captable(
         )
         balances = result.scalars().all()
 
-        # Get vesting info for each holder
+        # Get vesting info for each holder and auto-release vested tokens
         vesting_map = {}
         result = await db.execute(
             select(VestingSchedule).where(
                 VestingSchedule.token_id == token_id,
-                VestingSchedule.is_terminated == False
+                VestingSchedule.termination_type.is_(None)  # Not terminated
             )
         )
         vesting_schedules = result.scalars().all()
+
+        # Auto-release vested tokens for all active schedules
+        for vs in vesting_schedules:
+            await _auto_release_vested(db, token_id, vs)
+
+        # Commit the auto-release updates before building the response
+        await db.commit()
+
+        # Re-fetch balances after auto-release to get updated values
+        result = await db.execute(
+            select(CurrentBalance)
+            .where(CurrentBalance.token_id == token_id)
+            .where(CurrentBalance.balance > 0)
+            .order_by(CurrentBalance.balance.desc())
+        )
+        balances = result.scalars().all()
+
+        # Build vesting map for display
         for vs in vesting_schedules:
             if vs.beneficiary not in vesting_map:
                 vesting_map[vs.beneficiary] = {"vested": 0, "unvested": 0}
