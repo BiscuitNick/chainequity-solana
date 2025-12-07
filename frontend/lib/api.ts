@@ -271,7 +271,7 @@ class ApiClient {
   }
 
   async executeStockSplit(tokenId: number, data: { numerator: number; denominator: number }) {
-    return this.request<any>(`/tokens/${tokenId}/admin/stock-split`, {
+    return this.request<any>(`/tokens/${tokenId}/admin/execute-split`, {
       method: 'POST',
       body: JSON.stringify(data),
     })
@@ -338,6 +338,7 @@ export interface TokenIssuance {
   issued_by?: string
   notes?: string
   tx_signature?: string
+  slot?: number
   status: 'pending' | 'completed' | 'failed'
   created_at: string
   completed_at?: string

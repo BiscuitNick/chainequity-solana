@@ -8,10 +8,14 @@ from datetime import datetime
 from app.models.database import get_db
 from app.models.token import Token
 from app.models.transaction import CorporateAction
+from app.models.snapshot import CurrentBalance
+from app.models.vesting import VestingSchedule
 from app.schemas.admin import (
     MultisigConfigResponse,
     PendingTransactionResponse,
     CorporateActionRequest,
+    ExecuteSplitRequest,
+    ChangeSymbolRequest,
 )
 from app.services.solana_client import get_solana_client
 from solders.pubkey import Pubkey
@@ -252,18 +256,29 @@ async def change_symbol(
     if not new_symbol.isalnum():
         raise HTTPException(status_code=400, detail="Symbol must be alphanumeric")
 
+    # Check for duplicate symbol
+    new_symbol_upper = new_symbol.upper()
+    existing = await db.execute(
+        select(Token).where(
+            Token.symbol == new_symbol_upper,
+            Token.token_id != token_id
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail=f"Symbol '{new_symbol_upper}' is already in use by another token")
+
     solana_client = await get_solana_client()
     token_config_pda, _ = solana_client.derive_token_config_pda(Pubkey.from_string(token.mint_address))
 
     return {
         "message": "Symbol change transaction prepared for signing",
         "old_symbol": token.symbol,
-        "new_symbol": new_symbol.upper(),
+        "new_symbol": new_symbol_upper,
         "instruction": {
             "program": str(solana_client.program_addresses.token),
             "action": "change_symbol",
             "data": {
-                "new_symbol": new_symbol.upper(),
+                "new_symbol": new_symbol_upper,
             }
         }
     }
@@ -291,3 +306,161 @@ async def list_corporate_actions(token_id: int = Path(...), db: AsyncSession = D
         }
         for a in actions
     ]
+
+
+@router.post("/execute-split")
+async def execute_split(
+    request: ExecuteSplitRequest,
+    token_id: int = Path(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """Execute a stock split - updates all holder balances"""
+    # Get token
+    result = await db.execute(
+        select(Token).where(Token.token_id == token_id)
+    )
+    token = result.scalar_one_or_none()
+    if not token:
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    # Validate split ratio
+    if request.numerator < 1:
+        raise HTTPException(status_code=400, detail="Numerator must be >= 1")
+    if request.denominator < 1:
+        raise HTTPException(status_code=400, detail="Denominator must be >= 1")
+    if request.numerator == request.denominator:
+        raise HTTPException(status_code=400, detail="Split ratio cannot be 1:1")
+
+    # Get all current balances for this token
+    result = await db.execute(
+        select(CurrentBalance).where(CurrentBalance.token_id == token_id)
+    )
+    balances = result.scalars().all()
+
+    # Apply split ratio to all balances
+    old_total_supply = token.total_supply or 0
+    for balance in balances:
+        # For a 2:1 split, multiply by 2 and divide by 1
+        # For a 1:2 reverse split, multiply by 1 and divide by 2
+        new_balance = (balance.balance * request.numerator) // request.denominator
+        balance.balance = new_balance
+        balance.updated_at = datetime.utcnow()
+
+    # Get all vesting schedules for this token and apply split
+    result = await db.execute(
+        select(VestingSchedule).where(VestingSchedule.token_id == token_id)
+    )
+    vesting_schedules = result.scalars().all()
+
+    for schedule in vesting_schedules:
+        # Update total_amount
+        schedule.total_amount = (schedule.total_amount * request.numerator) // request.denominator
+        # Update released_amount
+        schedule.released_amount = (schedule.released_amount * request.numerator) // request.denominator
+        # Update vested_at_termination if set
+        if schedule.vested_at_termination is not None:
+            schedule.vested_at_termination = (schedule.vested_at_termination * request.numerator) // request.denominator
+
+    # Update token total supply
+    new_total_supply = (old_total_supply * request.numerator) // request.denominator
+    token.total_supply = new_total_supply
+
+    # Determine action type
+    action_type = "stock_split" if request.numerator > request.denominator else "reverse_split"
+
+    # Get current slot from Solana
+    solana_client = await get_solana_client()
+    current_slot = await solana_client.get_slot()
+
+    # Record the corporate action
+    corporate_action = CorporateAction(
+        token_id=token_id,
+        action_type=action_type,
+        action_data={
+            "numerator": request.numerator,
+            "denominator": request.denominator,
+            "old_total_supply": old_total_supply,
+            "new_total_supply": new_total_supply,
+        },
+        executed_at=datetime.utcnow(),
+        executed_by="system",  # Would be wallet address in production
+        signature="local-execution",  # Would be transaction signature in production
+        slot=current_slot,
+    )
+    db.add(corporate_action)
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "message": f"Stock split executed: {request.numerator}:{request.denominator}",
+        "action_type": action_type,
+        "old_total_supply": old_total_supply,
+        "new_total_supply": new_total_supply,
+    }
+
+
+@router.post("/change-symbol")
+async def execute_change_symbol(
+    request: ChangeSymbolRequest,
+    token_id: int = Path(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """Execute a symbol change"""
+    # Get token
+    result = await db.execute(
+        select(Token).where(Token.token_id == token_id)
+    )
+    token = result.scalar_one_or_none()
+    if not token:
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    # Validate new symbol
+    new_symbol = request.new_symbol.strip().upper()
+    if len(new_symbol) < 2 or len(new_symbol) > 10:
+        raise HTTPException(status_code=400, detail="Symbol must be 2-10 characters")
+    if not new_symbol.isalnum():
+        raise HTTPException(status_code=400, detail="Symbol must be alphanumeric")
+
+    # Check for duplicate symbol
+    existing = await db.execute(
+        select(Token).where(
+            Token.symbol == new_symbol,
+            Token.token_id != token_id
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail=f"Symbol '{new_symbol}' is already in use by another token")
+
+    old_symbol = token.symbol
+
+    # Update the symbol
+    token.symbol = new_symbol
+
+    # Get current slot from Solana
+    solana_client = await get_solana_client()
+    current_slot = await solana_client.get_slot()
+
+    # Record the corporate action
+    corporate_action = CorporateAction(
+        token_id=token_id,
+        action_type="symbol_change",
+        action_data={
+            "old_symbol": old_symbol,
+            "new_symbol": new_symbol,
+        },
+        executed_at=datetime.utcnow(),
+        executed_by="system",  # Would be wallet address in production
+        signature="local-execution",  # Would be transaction signature in production
+        slot=current_slot,
+    )
+    db.add(corporate_action)
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "message": f"Symbol changed from {old_symbol} to {new_symbol}",
+        "old_symbol": old_symbol,
+        "new_symbol": new_symbol,
+    }

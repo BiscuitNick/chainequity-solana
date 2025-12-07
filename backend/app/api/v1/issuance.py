@@ -172,6 +172,10 @@ async def issue_tokens(
     if wallet.status != "active":
         raise HTTPException(status_code=400, detail=f"Wallet status is '{wallet.status}'. Only active wallets can receive tokens.")
 
+    # Get current slot from Solana
+    solana_client = await get_solana_client()
+    current_slot = await solana_client.get_slot()
+
     # Create issuance record - mark as completed immediately for testing
     # In production, this would be "pending" until on-chain tx confirms
     issuance = TokenIssuance(
@@ -179,6 +183,7 @@ async def issue_tokens(
         recipient=request.recipient,
         amount=request.amount,
         notes=request.notes,
+        slot=current_slot,
         status="completed",
         completed_at=datetime.utcnow(),
     )
@@ -189,10 +194,6 @@ async def issue_tokens(
 
     await db.commit()
     await db.refresh(issuance)
-
-    # Build transaction data (for reference - actual minting simulated above)
-    solana_client = await get_solana_client()
-    token_config_pda, _ = solana_client.derive_token_config_pda(Pubkey.from_string(token.mint_address))
 
     return {
         "message": f"Successfully issued {request.amount} tokens to {request.recipient}",
@@ -376,6 +377,7 @@ def _issuance_to_response(i: TokenIssuance) -> TokenIssuanceResponse:
         issued_by=i.issued_by,
         notes=i.notes,
         tx_signature=i.tx_signature,
+        slot=i.slot,
         status=i.status,
         created_at=i.created_at,
         completed_at=i.completed_at,

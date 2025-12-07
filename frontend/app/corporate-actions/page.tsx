@@ -4,8 +4,10 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/useAppStore'
-import { Split, Type, History, AlertCircle, RefreshCw } from 'lucide-react'
+import { Split, Type, History, AlertCircle, RefreshCw, Copy, Check } from 'lucide-react'
 import { api, CorporateAction } from '@/lib/api'
+import { StockSplitModal } from '@/components/StockSplitModal'
+import { ChangeSymbolModal } from '@/components/ChangeSymbolModal'
 
 export default function CorporateActionsPage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
@@ -14,6 +16,13 @@ export default function CorporateActionsPage() {
   const [actions, setActions] = useState<CorporateAction[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [copiedSlot, setCopiedSlot] = useState<number | null>(null)
+
+  const copySlotToClipboard = async (slot: number) => {
+    await navigator.clipboard.writeText(slot.toString())
+    setCopiedSlot(slot)
+    setTimeout(() => setCopiedSlot(null), 2000)
+  }
 
   const fetchCorporateActions = async () => {
     if (!selectedToken) return
@@ -181,8 +190,24 @@ export default function CorporateActionsPage() {
                     <div>
                       <p className="font-medium">{getActionDescription(action)}</p>
                       <p className="text-xs text-muted-foreground">
-                        Executed on {new Date(action.executed_at).toLocaleDateString()} by {action.executed_by.slice(0, 4)}...{action.executed_by.slice(-4)}
+                        Executed on {new Date(action.executed_at).toLocaleString()} by {action.executed_by.slice(0, 4)}...{action.executed_by.slice(-4)}
                       </p>
+                      {action.slot !== undefined && action.slot !== null && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                          <span>Slot #{action.slot.toLocaleString()}</span>
+                          <button
+                            onClick={() => copySlotToClipboard(action.slot!)}
+                            className="p-0.5 hover:bg-muted rounded transition-colors"
+                            title="Copy slot number"
+                          >
+                            {copiedSlot === action.slot ? (
+                              <Check className="h-3 w-3 text-green-500" />
+                            ) : (
+                              <Copy className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                            )}
+                          </button>
+                        </p>
+                      )}
                     </div>
                   </div>
                   <span className="px-2 py-1 rounded text-xs capitalize bg-green-500/10 text-green-500">
@@ -194,6 +219,24 @@ export default function CorporateActionsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Stock Split Modal */}
+      <StockSplitModal
+        isOpen={showSplitModal}
+        onClose={() => setShowSplitModal(false)}
+        onSuccess={fetchCorporateActions}
+        tokenId={selectedToken.tokenId}
+        tokenSymbol={selectedToken.symbol}
+      />
+
+      {/* Change Symbol Modal */}
+      <ChangeSymbolModal
+        isOpen={showSymbolModal}
+        onClose={() => setShowSymbolModal(false)}
+        onSuccess={fetchCorporateActions}
+        tokenId={selectedToken.tokenId}
+        currentSymbol={selectedToken.symbol}
+      />
     </div>
   )
 }

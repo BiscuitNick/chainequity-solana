@@ -24,6 +24,7 @@ class TokenIssuanceResponse(BaseModel):
     issued_by: Optional[str] = None
     notes: Optional[str] = None
     tx_signature: Optional[str] = None
+    slot: Optional[int] = None
     status: str
     created_at: datetime
     completed_at: Optional[datetime] = None

@@ -21,6 +21,7 @@ class TokenIssuance(Base):
 
     # Transaction tracking
     tx_signature = Column(String(88), nullable=True)  # Solana tx signature
+    slot = Column(BigInteger, nullable=True)  # Solana slot number
     status = Column(String(20), nullable=False, default="pending")  # pending, completed, failed
 
     created_at = Column(DateTime, default=datetime.utcnow)

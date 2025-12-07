@@ -23,3 +23,12 @@ class PendingTransactionResponse(BaseModel):
 class CorporateActionRequest(BaseModel):
     action_type: str  # 'split' or 'symbol'
     params: Dict[str, Any]  # e.g., {"ratio": 7} or {"new_symbol": "NEWT"}
+
+
+class ExecuteSplitRequest(BaseModel):
+    numerator: int  # e.g., 2 for a 2:1 split
+    denominator: int = 1  # Usually 1 for forward splits
+
+
+class ChangeSymbolRequest(BaseModel):
+    new_symbol: str

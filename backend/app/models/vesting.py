@@ -66,7 +66,7 @@ class VestingSchedule(Base):
         if elapsed >= self.duration_seconds:
             return self.total_amount
 
-        if self.vesting_type == "linear":
+        if self.vesting_type in ("linear", "continuous"):
             return int(self.total_amount * elapsed / self.duration_seconds)
         elif self.vesting_type == "cliff_then_linear":
             if elapsed < self.cliff_seconds:

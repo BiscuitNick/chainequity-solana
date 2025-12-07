@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAppStore } from '@/stores/useAppStore'
+import { Copy, Check } from 'lucide-react'
 import api, { CapTableResponse, Proposal, Transfer, TransferStatsResponse, IssuanceStatsResponse, TokenIssuance } from '@/lib/api'
 
 // Combined activity type for displaying both transfers and issuances
@@ -14,6 +15,7 @@ type Activity = {
   amount: number
   timestamp: string
   status: string
+  slot?: number
 }
 
 export default function DashboardPage() {
@@ -24,6 +26,13 @@ export default function DashboardPage() {
   const [issuanceStats, setIssuanceStats] = useState<IssuanceStatsResponse | null>(null)
   const [recentActivity, setRecentActivity] = useState<Activity[]>([])
   const [loading, setLoading] = useState(false)
+  const [copiedSlot, setCopiedSlot] = useState<number | null>(null)
+
+  const copySlotToClipboard = async (slot: number) => {
+    await navigator.clipboard.writeText(slot.toString())
+    setCopiedSlot(slot)
+    setTimeout(() => setCopiedSlot(null), 2000)
+  }
 
   useEffect(() => {
     if (selectedToken?.tokenId === undefined || selectedToken?.tokenId === null) return
@@ -54,6 +63,7 @@ export default function DashboardPage() {
             amount: t.amount,
             timestamp: t.block_time,
             status: t.status,
+            slot: t.slot,
           })),
           ...issuancesData.map((i: TokenIssuance) => ({
             id: `issuance-${i.id}`,
@@ -63,6 +73,7 @@ export default function DashboardPage() {
             amount: i.amount,
             timestamp: i.created_at,
             status: i.status,
+            slot: i.slot,
           })),
         ]
 
@@ -218,9 +229,27 @@ export default function DashboardPage() {
                           {activity.from === 'MINT' ? 'MINT' : `${activity.from.slice(0, 4)}...${activity.from.slice(-4)}`} → {activity.to.slice(0, 4)}...{activity.to.slice(-4)}
                         </span>
                       </div>
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(activity.timestamp).toLocaleString()}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(activity.timestamp).toLocaleString()}
+                        </span>
+                        {activity.slot !== undefined && activity.slot !== null && (
+                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <span>Slot #{activity.slot.toLocaleString()}</span>
+                            <button
+                              onClick={() => copySlotToClipboard(activity.slot!)}
+                              className="p-0.5 hover:bg-muted rounded transition-colors"
+                              title="Copy slot number"
+                            >
+                              {copiedSlot === activity.slot ? (
+                                <Check className="h-3 w-3 text-green-500" />
+                              ) : (
+                                <Copy className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                              )}
+                            </button>
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="text-right">
                       <div className="font-medium">{activity.amount.toLocaleString()}</div>
