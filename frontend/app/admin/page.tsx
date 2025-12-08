@@ -35,8 +35,7 @@ export default function AdminPage() {
       setMultiSigConfig(config)
       setPendingTxs(txs)
     } catch (e: any) {
-      console.error('Failed to fetch admin data:', e)
-      setError(e.detail || 'Failed to fetch admin data')
+      setError(e?.detail || e?.message || 'Failed to fetch admin data')
       setMultiSigConfig(null)
       setPendingTxs([])
     } finally {
@@ -54,8 +53,7 @@ export default function AdminPage() {
       await api.setPaused(selectedToken.tokenId, !isPaused)
       setIsPaused(!isPaused)
     } catch (e: any) {
-      console.error('Failed to toggle pause:', e)
-      setError(e.detail || 'Failed to toggle pause state')
+      setError(e?.detail || e?.message || 'Failed to toggle pause state')
     }
   }
 
@@ -65,8 +63,7 @@ export default function AdminPage() {
       await api.approveTransaction(selectedToken.tokenId, txId)
       fetchAdminData()
     } catch (e: any) {
-      console.error('Failed to approve transaction:', e)
-      setError(e.detail || 'Failed to approve transaction')
+      setError(e?.detail || e?.message || 'Failed to approve transaction')
     }
   }
 
@@ -76,8 +73,7 @@ export default function AdminPage() {
       await api.executeTransaction(selectedToken.tokenId, txId)
       fetchAdminData()
     } catch (e: any) {
-      console.error('Failed to execute transaction:', e)
-      setError(e.detail || 'Failed to execute transaction')
+      setError(e?.detail || e?.message || 'Failed to execute transaction')
     }
   }
 

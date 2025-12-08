@@ -108,8 +108,9 @@ async def create_proposal(
         raise HTTPException(status_code=404, detail="Token not found")
 
     # Check governance is enabled
-    if not token.features.get("governance_enabled", False):
-        raise HTTPException(status_code=400, detail="Governance not enabled for this token")
+    features = token.features or {}
+    if not features.get("governance_enabled", True):  # Default True for legacy tokens
+        raise HTTPException(status_code=400, detail="Governance is not enabled for this token")
 
     # Get next proposal number
     result = await db.execute(

@@ -60,7 +60,8 @@ export default function GovernancePage() {
       setProposals(data)
     } catch (e: any) {
       console.error('Failed to fetch proposals:', e)
-      setError(e.detail || 'Failed to fetch proposals')
+      const errorMessage = e?.detail || e?.message || 'Failed to fetch proposals'
+      setError(errorMessage)
       setProposals([])
     } finally {
       setLoading(false)
@@ -82,7 +83,8 @@ export default function GovernancePage() {
       fetchProposals()
     } catch (e: any) {
       console.error('Failed to vote:', e)
-      setError(e.detail || 'Failed to vote')
+      const errorMessage = e?.detail || e?.message || 'Failed to vote'
+      setError(errorMessage)
     }
   }
 
@@ -149,8 +151,7 @@ export default function GovernancePage() {
       resetForm()
       fetchProposals()
     } catch (e: any) {
-      console.error('Failed to create proposal:', e)
-      setError(e.detail || 'Failed to create proposal')
+      setError(e?.detail || e?.message || 'Failed to create proposal')
     } finally {
       setSubmitting(false)
     }
@@ -165,7 +166,8 @@ export default function GovernancePage() {
       fetchProposals()
     } catch (e: any) {
       console.error('Failed to execute proposal:', e)
-      setError(e.detail || 'Failed to execute proposal')
+      const errorMessage = e?.detail || e?.message || 'Failed to execute proposal'
+      setError(errorMessage)
     }
   }
 

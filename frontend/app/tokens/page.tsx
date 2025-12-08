@@ -3,8 +3,18 @@
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Plus, Coins, ExternalLink, RefreshCw } from 'lucide-react'
+import { Plus, Coins, ExternalLink, RefreshCw, Calendar, Vote, DollarSign, Shield, Lock, Settings } from 'lucide-react'
 import { CreateTokenModal } from '@/components/CreateTokenModal'
+
+interface TokenFeatures {
+  vesting_enabled?: boolean
+  governance_enabled?: boolean
+  dividends_enabled?: boolean
+  transfer_restrictions_enabled?: boolean
+  upgradeable?: boolean
+  admin_signers?: string[]
+  admin_threshold?: number
+}
 
 interface TokenInfo {
   id: number
@@ -17,6 +27,7 @@ interface TokenInfo {
   holders: number
   isPaused: boolean
   createdAt: string
+  features?: TokenFeatures
 }
 
 export default function TokensPage() {
@@ -47,6 +58,9 @@ export default function TokensPage() {
           data.map(async (t: any) => {
             let issuedSupply = 0
             let holders = 0
+            let features: TokenFeatures = {}
+
+            // Fetch cap table data
             try {
               const capTableRes = await fetch(`${apiUrl}/tokens/${t.token_id}/captable`)
               if (capTableRes.ok) {
@@ -57,6 +71,18 @@ export default function TokensPage() {
             } catch (e) {
               console.error(`Failed to fetch cap table for token ${t.token_id}:`, e)
             }
+
+            // Fetch token details with features
+            try {
+              const detailRes = await fetch(`${apiUrl}/factory/tokens/${t.token_id}`)
+              if (detailRes.ok) {
+                const detail = await detailRes.json()
+                features = detail.features || {}
+              }
+            } catch (e) {
+              console.error(`Failed to fetch token details for token ${t.token_id}:`, e)
+            }
+
             return {
               id: t.token_id,
               symbol: t.symbol,
@@ -68,6 +94,7 @@ export default function TokensPage() {
               holders,
               isPaused: t.is_paused,
               createdAt: t.created_at,
+              features,
             }
           })
         )
@@ -194,7 +221,7 @@ export default function TokensPage() {
                 )}
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <div className="grid grid-cols-3 gap-4 text-sm">
                 <div>
                   <p className="text-muted-foreground">Issued</p>
@@ -209,8 +236,57 @@ export default function TokensPage() {
                   <p className="font-medium">{token.holders}</p>
                 </div>
               </div>
-              <div className="mt-4 flex items-center justify-between">
-                <span className="font-mono text-xs text-muted-foreground">{token.mintAddress}</span>
+
+              {/* Token Features */}
+              {token.features && Object.keys(token.features).length > 0 && (
+                <div className="pt-3 border-t">
+                  <p className="text-xs text-muted-foreground mb-2">Features</p>
+                  <div className="flex flex-wrap gap-2">
+                    {token.features.vesting_enabled && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-500/10 text-blue-500 rounded text-xs">
+                        <Calendar className="h-3 w-3" />
+                        Vesting
+                      </span>
+                    )}
+                    {token.features.governance_enabled && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-500/10 text-purple-500 rounded text-xs">
+                        <Vote className="h-3 w-3" />
+                        Governance
+                      </span>
+                    )}
+                    {token.features.dividends_enabled && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-500/10 text-green-500 rounded text-xs">
+                        <DollarSign className="h-3 w-3" />
+                        Dividends
+                      </span>
+                    )}
+                    {token.features.transfer_restrictions_enabled && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-orange-500/10 text-orange-500 rounded text-xs">
+                        <Lock className="h-3 w-3" />
+                        Restricted
+                      </span>
+                    )}
+                    {token.features.upgradeable && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-500/10 text-gray-500 rounded text-xs">
+                        <Settings className="h-3 w-3" />
+                        Upgradeable
+                      </span>
+                    )}
+                  </div>
+                  {/* Multi-sig info */}
+                  {token.features.admin_signers && token.features.admin_signers.length > 0 && (
+                    <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+                      <Shield className="h-3 w-3" />
+                      <span>
+                        Multi-sig: {token.features.admin_threshold || 1} of {token.features.admin_signers.length} signers
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between pt-2">
+                <span className="font-mono text-xs text-muted-foreground truncate max-w-[200px]">{token.mintAddress}</span>
                 <Button variant="ghost" size="sm">
                   <ExternalLink className="h-4 w-4" />
                 </Button>

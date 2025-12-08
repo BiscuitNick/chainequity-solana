@@ -36,29 +36,44 @@ async def get_multisig_config(token_id: int = Path(...), db: AsyncSession = Depe
     if not token:
         raise HTTPException(status_code=404, detail="Token not found")
 
-    # Derive multisig PDA and fetch account data
-    solana_client = await get_solana_client()
-    multisig_pda, _ = solana_client.derive_multisig_pda(Pubkey.from_string(token.mint_address))
+    # Check if token has features with admin signers stored (from UI-created tokens)
+    features = token.features or {}
+    if features.get("admin_signers"):
+        return MultisigConfigResponse(
+            signers=features.get("admin_signers", []),
+            threshold=features.get("admin_threshold", 1),
+            nonce=0,
+        )
 
-    # Fetch multisig account from chain
-    account_info = await solana_client.get_account_info(multisig_pda)
+    # Try to fetch from on-chain for legacy tokens
+    try:
+        solana_client = await get_solana_client()
+        multisig_pda, _ = solana_client.derive_multisig_pda(Pubkey.from_string(token.mint_address))
 
-    if not account_info:
-        # Multisig not initialized for this token
+        # Fetch multisig account from chain
+        account_info = await solana_client.get_account_info(multisig_pda)
+
+        if not account_info:
+            # Multisig not initialized for this token
+            return MultisigConfigResponse(
+                signers=[],
+                threshold=0,
+                nonce=0,
+            )
+
+        # In production, this would parse the account data using borsh
+        return MultisigConfigResponse(
+            signers=[],
+            threshold=1,
+            nonce=0,
+        )
+    except Exception:
+        # Invalid mint address format (e.g., demo tokens created via UI)
         return MultisigConfigResponse(
             signers=[],
             threshold=0,
             nonce=0,
         )
-
-    # In production, this would parse the account data using borsh
-    # For now, return placeholder that indicates it needs to be fetched from chain
-    # The actual parsing would depend on the on-chain program's account structure
-    return MultisigConfigResponse(
-        signers=[],
-        threshold=1,
-        nonce=0,
-    )
 
 
 @router.get("/multisig/pending", response_model=List[PendingTransactionResponse])
@@ -79,12 +94,14 @@ async def list_pending_transactions(token_id: int = Path(...), db: AsyncSession 
 
     # For this phase, query pending transactions from indexed data
     # Multi-sig transactions would be indexed by the event processor
-    solana_client = await get_solana_client()
-    multisig_pda, _ = solana_client.derive_multisig_pda(Pubkey.from_string(token.mint_address))
 
-    # Get program accounts for pending transactions
-    # Filter by: owner = factory program, has pending status
+    # For UI-created tokens or tokens with invalid addresses, just return empty
     try:
+        solana_client = await get_solana_client()
+        multisig_pda, _ = solana_client.derive_multisig_pda(Pubkey.from_string(token.mint_address))
+
+        # Get program accounts for pending transactions
+        # Filter by: owner = factory program, has pending status
         accounts = await solana_client.get_program_accounts(
             solana_client.program_addresses.factory,
             filters=[
@@ -92,7 +109,8 @@ async def list_pending_transactions(token_id: int = Path(...), db: AsyncSession 
             ]
         )
     except Exception:
-        accounts = []
+        # Invalid mint address format or RPC error - return empty list
+        return []
 
     # Parse and return pending transactions
     # In production, this would deserialize the account data

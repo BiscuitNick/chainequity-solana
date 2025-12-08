@@ -69,6 +69,13 @@ class ApiClient {
     return this.request<any[]>('/factory/templates')
   }
 
+  async createToken(data: CreateTokenRequest): Promise<CreateTokenResponseData> {
+    return this.request<CreateTokenResponseData>('/factory/tokens', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
   // Token endpoints
   async listTokens(skip = 0, limit = 20) {
     return this.request<TokenListResponse[]>(`/tokens/?skip=${skip}&limit=${limit}`)
@@ -604,6 +611,32 @@ export interface CorporateAction {
   executed_by: string
   signature?: string
   slot?: number
+}
+
+// Token creation types
+export interface TokenFeaturesRequest {
+  vesting_enabled: boolean
+  governance_enabled: boolean
+  dividends_enabled: boolean
+  transfer_restrictions_enabled: boolean
+  upgradeable: boolean
+}
+
+export interface CreateTokenRequest {
+  symbol: string
+  name: string
+  decimals: number
+  initial_supply: number
+  features: TokenFeaturesRequest
+  admin_signers: string[]
+  admin_threshold: number
+  template_id?: number
+}
+
+export interface CreateTokenResponseData {
+  token_id: number
+  mint_address: string
+  transaction_signature: string
 }
 
 // Export singleton instance
