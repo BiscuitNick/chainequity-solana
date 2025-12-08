@@ -39,7 +39,7 @@ ChainEquity is a full-stack application for managing tokenized securities on Sol
 
 | Component | Technology |
 |-----------|------------|
-| Blockchain | Solana Devnet |
+| Blockchain | Solana (Localnet or Devnet) |
 | Smart Contracts | Rust + Anchor Framework (4 programs) |
 | Backend API | Python + FastAPI + anchorpy |
 | Database | PostgreSQL + SQLAlchemy |
@@ -56,12 +56,43 @@ ChainEquity is a full-stack application for managing tokenized securities on Sol
 - [Anchor](https://www.anchor-lang.com/docs/installation) (0.30+)
 - [Node.js](https://nodejs.org/) (20+)
 - [Python](https://python.org/) (3.11+)
-- [Docker](https://docker.com/) (optional, for local dev)
+- [Docker](https://docker.com/) (optional, for containerized dev)
 
-### Using Docker (Recommended)
+---
+
+## Network Configuration
+
+ChainEquity supports two Solana networks. Choose based on your needs:
+
+| Network | Command | Use Case |
+|---------|---------|----------|
+| **Localnet** | `make dev-localnet` | Fast iteration, offline dev, free transactions |
+| **Devnet** | `make dev-devnet` | Integration testing, persistent state, team collaboration |
+
+### Localnet vs Devnet
+
+| Aspect | Localnet | Devnet |
+|--------|----------|--------|
+| **Speed** | Instant confirmations | Real network latency (~400ms) |
+| **Cost** | Free, unlimited | Free but rate-limited |
+| **State** | Resets on restart | Persistent |
+| **Offline** | Yes | No |
+| **Ecosystem** | Isolated | Access to other devnet programs |
+| **Slot numbers** | Starts at 0 | ~426 million (running since 2020) |
+
+---
+
+## Running with Docker (Recommended)
+
+### Option A: Devnet (Simplest)
+
+No local validator needed. Connects to Solana's public devnet.
 
 ```bash
-# Start all services
+# Start all services on devnet
+make dev-devnet
+
+# Or simply (devnet is default)
 make dev
 
 # View logs
@@ -71,32 +102,204 @@ make dev-logs
 make dev-down
 ```
 
-Services:
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- API Docs: http://localhost:8000/docs
+### Option B: Localnet
 
-### Manual Setup
+Requires running a local Solana validator on your host machine.
 
 ```bash
-# 1. Install dependencies
-make install
+# Terminal 1: Start local validator
+make validator
 
-# 2. Build Solana programs
-anchor build
+# Terminal 2: Start services pointing to local validator
+make dev-localnet
 
-# 3. Start local validator (optional)
-solana-test-validator
+# View logs
+make dev-logs
 
-# 4. Deploy programs
+# Stop services
+make dev-down
+```
+
+### Services (both modes)
+
+| Service | URL |
+|---------|-----|
+| Frontend | http://localhost:3000 |
+| Backend API | http://localhost:8000 |
+| API Docs | http://localhost:8000/docs |
+| Local Validator (localnet only) | http://localhost:8899 |
+
+---
+
+## Running Without Docker (Terminal Mode)
+
+For faster iteration or debugging, run services directly in your terminal.
+
+### Option A: Devnet
+
+```bash
+# 1. Configure environment for devnet
+make setup-devnet
+
+# 2. Start PostgreSQL (still via Docker, or use your own)
+docker-compose up -d postgres
+
+# 3. Terminal 1: Start backend
+make dev-backend
+
+# 4. Terminal 2: Start frontend
+make dev-frontend
+```
+
+### Option B: Localnet
+
+```bash
+# 1. Configure environment for localnet
+make setup-localnet
+
+# 2. Start PostgreSQL
+docker-compose up -d postgres
+
+# 3. Terminal 1: Start local Solana validator
+make validator
+
+# 4. Terminal 2: Deploy programs to local validator
 anchor deploy
 
-# 5. Start backend
-cd backend && uvicorn app.main:app --reload
+# 5. Terminal 3: Start backend
+make dev-backend
 
-# 6. Start frontend
-cd frontend && npm run dev
+# 6. Terminal 4: Start frontend
+make dev-frontend
 ```
+
+---
+
+## Mixed Mode (Docker + Terminal)
+
+You can mix Docker and terminal for flexibility:
+
+### Example: Docker DB + Terminal Services + Devnet
+
+```bash
+# Configure for devnet
+make setup-devnet
+
+# Start only the database in Docker
+docker-compose up -d postgres
+
+# Run backend in terminal (for hot reload / debugging)
+make dev-backend
+
+# Run frontend in terminal (for hot reload / debugging)
+make dev-frontend
+```
+
+### Example: Docker DB + Terminal Services + Localnet
+
+```bash
+# Configure for localnet
+make setup-localnet
+
+# Terminal 1: Start local validator
+make validator
+
+# Start only the database in Docker
+docker-compose up -d postgres
+
+# Terminal 2: Deploy programs
+anchor deploy
+
+# Terminal 3: Run backend
+make dev-backend
+
+# Terminal 4: Run frontend
+make dev-frontend
+```
+
+---
+
+## Switching Networks
+
+### If using Docker:
+
+```bash
+# Stop current services
+make dev-down
+
+# Switch to localnet
+make dev-localnet
+
+# Or switch to devnet
+make dev-devnet
+```
+
+### If running in terminal:
+
+```bash
+# Switch to localnet
+make setup-localnet
+# Restart backend and frontend
+
+# Switch to devnet
+make setup-devnet
+# Restart backend and frontend
+```
+
+---
+
+## Environment Files
+
+Configuration templates are in the `env/` directory:
+
+```
+env/
+├── localnet.env    # Local validator configuration
+└── devnet.env      # Devnet configuration
+```
+
+The `make setup-*` commands copy these to the appropriate locations:
+- `backend/.env` - Backend configuration
+- `frontend/.env.local` - Frontend configuration
+
+### Manual Configuration
+
+If you need custom settings, edit directly:
+
+```bash
+# Backend
+cp env/devnet.env backend/.env
+# Edit backend/.env as needed
+
+# Frontend
+# Edit frontend/.env.local as needed
+```
+
+---
+
+## Program Deployment
+
+### To Localnet
+
+```bash
+# Start validator first
+make validator
+
+# Deploy (new terminal)
+anchor deploy
+```
+
+### To Devnet
+
+```bash
+# Ensure you have devnet SOL
+solana airdrop 2
+
+# Deploy
+make deploy-programs
+```
+
+After deployment, update the program IDs in your environment files.
 
 ## Project Structure
 

@@ -1,0 +1,25 @@
+# =============================================================================
+# Docker Compose - LOCALNET Configuration
+# =============================================================================
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.localnet.yml up
+# Or simply: make dev-localnet
+#
+# IMPORTANT: You must run solana-test-validator on your host machine first!
+# =============================================================================
+
+services:
+  backend:
+    environment:
+      SOLANA_CLUSTER: localnet
+      SOLANA_RPC_URL: http://host.docker.internal:8899
+      SOLANA_WS_URL: ws://host.docker.internal:8900
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+      INDEXER_POLL_INTERVAL: "2"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  frontend:
+    environment:
+      NEXT_PUBLIC_SOLANA_NETWORK: localnet
+      NEXT_PUBLIC_SOLANA_RPC_URL: http://localhost:8899

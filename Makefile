@@ -1,11 +1,34 @@
 .PHONY: dev build test clean install deploy
 
 # ============================================================================
-# Development
+# Development - Network Selection
+# ============================================================================
+# Choose your Solana network:
+#   make dev-localnet  - Use local validator (must run solana-test-validator first)
+#   make dev-devnet    - Use Solana devnet (public testnet)
+#   make dev           - Default (devnet)
 # ============================================================================
 
-dev: ## Start all services with Docker Compose
-	docker-compose up -d
+dev: dev-devnet ## Start all services (default: devnet)
+
+dev-devnet: ## Start with DEVNET (public Solana testnet)
+	@echo "🌐 Starting with DEVNET configuration..."
+	docker-compose -f docker-compose.yml -f docker-compose.devnet.yml up -d
+	@echo ""
+	@echo "✅ Services started on DEVNET"
+	@echo "   Frontend: http://localhost:3000"
+	@echo "   Backend:  http://localhost:8000"
+	@echo "   API Docs: http://localhost:8000/docs"
+
+dev-localnet: ## Start with LOCALNET (requires solana-test-validator running)
+	@echo "🖥️  Starting with LOCALNET configuration..."
+	@echo "⚠️  Make sure solana-test-validator is running on your host!"
+	docker-compose -f docker-compose.yml -f docker-compose.localnet.yml up -d
+	@echo ""
+	@echo "✅ Services started on LOCALNET"
+	@echo "   Frontend: http://localhost:3000"
+	@echo "   Backend:  http://localhost:8000"
+	@echo "   Validator: http://localhost:8899"
 
 dev-down: ## Stop all services
 	docker-compose down
@@ -18,6 +41,67 @@ dev-backend: ## Run backend locally (requires Python env)
 
 dev-frontend: ## Run frontend locally (requires Node.js)
 	cd frontend && npm run dev
+
+# ============================================================================
+# Environment Setup
+# ============================================================================
+
+setup-localnet: ## Configure local .env files for LOCALNET
+	@echo "📝 Setting up LOCALNET environment..."
+	@if [ -f env/localnet.env ]; then cp env/localnet.env backend/.env; \
+	elif [ -f env/localnet.env.example ]; then cp env/localnet.env.example backend/.env; \
+	else echo "❌ No env/localnet.env or env/localnet.env.example found"; exit 1; fi
+	@echo "NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1" > frontend/.env.local
+	@echo "NEXT_PUBLIC_WS_URL=ws://localhost:8000/api/v1/ws" >> frontend/.env.local
+	@echo "NEXT_PUBLIC_SOLANA_NETWORK=localnet" >> frontend/.env.local
+	@echo "NEXT_PUBLIC_SOLANA_RPC_URL=http://localhost:8899" >> frontend/.env.local
+	@echo "" >> frontend/.env.local
+	@echo "# Program IDs (localnet deployment)" >> frontend/.env.local
+	@echo "NEXT_PUBLIC_FACTORY_PROGRAM_ID=3Jui9FBBhqbbxE9s83fcUya1xrG9kpUZS1pTBAcWohbE" >> frontend/.env.local
+	@echo "NEXT_PUBLIC_TOKEN_PROGRAM_ID=TxPUnQaa9MWhTdTURSZEieS6BKmpYiU4c3GtYKV3Kq2" >> frontend/.env.local
+	@echo "NEXT_PUBLIC_GOVERNANCE_PROGRAM_ID=qonFMa4fD9KLRWG73aQzvQ2d5WnBNF5S9jzaRwLcwQQ" >> frontend/.env.local
+	@echo "NEXT_PUBLIC_TEST_USDC_PROGRAM_ID=28JkLhzXCQme5fFrAqoWwyJxSNiv71CMQcS5x4xCtqoX" >> frontend/.env.local
+	@echo "✅ Environment configured for LOCALNET"
+	@echo "   Run: solana-test-validator"
+	@echo "   Then: make dev-backend (terminal 1)"
+	@echo "   Then: make dev-frontend (terminal 2)"
+
+setup-devnet: ## Configure local .env files for DEVNET
+	@echo "📝 Setting up DEVNET environment..."
+	@if [ -f env/devnet.env ]; then cp env/devnet.env backend/.env; \
+	elif [ -f env/devnet.env.example ]; then cp env/devnet.env.example backend/.env; \
+	else echo "❌ No env/devnet.env or env/devnet.env.example found"; exit 1; fi
+	@echo "NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1" > frontend/.env.local
+	@echo "NEXT_PUBLIC_WS_URL=ws://localhost:8000/api/v1/ws" >> frontend/.env.local
+	@echo "NEXT_PUBLIC_SOLANA_NETWORK=devnet" >> frontend/.env.local
+	@echo "NEXT_PUBLIC_SOLANA_RPC_URL=https://api.devnet.solana.com" >> frontend/.env.local
+	@echo "" >> frontend/.env.local
+	@echo "# Program IDs (devnet deployment - update after deploy)" >> frontend/.env.local
+	@echo "NEXT_PUBLIC_FACTORY_PROGRAM_ID=Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS" >> frontend/.env.local
+	@echo "NEXT_PUBLIC_TOKEN_PROGRAM_ID=HmbTLCmaGvZhKnn1Zfa1JVnp7vkMV4DYVxPLWBVoN65L" >> frontend/.env.local
+	@echo "NEXT_PUBLIC_GOVERNANCE_PROGRAM_ID=BPFLoaderUpgradeab1e11111111111111111111111" >> frontend/.env.local
+	@echo "NEXT_PUBLIC_TEST_USDC_PROGRAM_ID=TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" >> frontend/.env.local
+	@echo "✅ Environment configured for DEVNET"
+	@echo "   Run: make dev-backend (terminal 1)"
+	@echo "   Then: make dev-frontend (terminal 2)"
+
+# ============================================================================
+# Local Validator
+# ============================================================================
+
+SOLANA_VALIDATOR := $(shell [ -x ~/.local/share/solana/install/releases/2.1.11/solana-release/bin/solana-test-validator ] && echo ~/.local/share/solana/install/releases/2.1.11/solana-release/bin/solana-test-validator || echo solana-test-validator)
+
+validator: ## Start local Solana test validator
+	@echo "🚀 Starting local Solana validator..."
+	@rm -rf /tmp/solana-test-ledger
+	$(SOLANA_VALIDATOR) --ledger /tmp/solana-test-ledger
+
+validator-bg: ## Start local Solana test validator in background
+	@echo "🚀 Starting local Solana validator in background..."
+	@rm -rf /tmp/solana-test-ledger
+	$(SOLANA_VALIDATOR) --ledger /tmp/solana-test-ledger &
+	@sleep 5
+	@echo "✅ Validator running at http://localhost:8899"
 
 # ============================================================================
 # Build

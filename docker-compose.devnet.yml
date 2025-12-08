@@ -1,0 +1,23 @@
+# =============================================================================
+# Docker Compose - DEVNET Configuration
+# =============================================================================
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.devnet.yml up
+# Or simply: make dev-devnet
+#
+# Uses Solana's public devnet - no local validator needed
+# =============================================================================
+
+services:
+  backend:
+    environment:
+      SOLANA_CLUSTER: devnet
+      SOLANA_RPC_URL: https://api.devnet.solana.com
+      SOLANA_WS_URL: wss://api.devnet.solana.com
+      DEBUG: "false"
+      LOG_LEVEL: INFO
+      INDEXER_POLL_INTERVAL: "5"
+
+  frontend:
+    environment:
+      NEXT_PUBLIC_SOLANA_NETWORK: devnet
+      NEXT_PUBLIC_SOLANA_RPC_URL: https://api.devnet.solana.com
