@@ -34,9 +34,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
     []
   )
 
-  // Filter out non-Solana wallets from the standard wallet detection
+  // Handle wallet errors
   const onError = useCallback((error: Error) => {
-    console.error('Wallet error:', error)
+    // Ignore "User rejected" errors (user cancelled connection)
+    if (error.message?.includes('User rejected')) {
+      console.log('User cancelled wallet connection')
+      return
+    }
+    console.error('Wallet error:', error.name, error.message)
   }, [])
 
   return (

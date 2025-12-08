@@ -32,3 +32,11 @@ class ExecuteSplitRequest(BaseModel):
 
 class ChangeSymbolRequest(BaseModel):
     new_symbol: str
+
+
+class UpdateThresholdRequest(BaseModel):
+    threshold: int
+
+
+class PauseRequest(BaseModel):
+    paused: bool

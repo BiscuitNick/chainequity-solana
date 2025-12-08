@@ -3,10 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import List
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.models.database import get_db
 from app.models.governance import Proposal, VoteRecord
+import uuid
 from app.models.token import Token
 from app.models.snapshot import CurrentBalance
 from app.schemas.governance import (
@@ -97,7 +98,7 @@ async def create_proposal(
     token_id: int = Path(...),
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new proposal - returns unsigned transaction for client signing"""
+    """Create a new proposal and save to database"""
     # Verify token exists
     result = await db.execute(
         select(Token).where(Token.token_id == token_id)
@@ -117,25 +118,52 @@ async def create_proposal(
     max_num = result.scalar() or 0
     next_num = max_num + 1
 
-    # Return transaction data for client to sign
-    # In production, this would build the actual Solana transaction
+    # Calculate voting period
+    now = datetime.utcnow()
+    if request.voting_period_minutes:
+        # Demo mode: use minutes for quick testing
+        voting_ends = now + timedelta(minutes=request.voting_period_minutes)
+    elif request.voting_period_days:
+        voting_ends = now + timedelta(days=request.voting_period_days)
+    else:
+        # Default to 3 days
+        voting_ends = now + timedelta(days=3)
+
+    # Derive proposal PDA for on_chain_address
     solana_client = await get_solana_client()
     token_config_pda, _ = solana_client.derive_token_config_pda(Pubkey.from_string(token.mint_address))
     proposal_pda, _ = solana_client.derive_proposal_pda(token_config_pda, next_num)
 
+    # Create the proposal in the database
+    proposer = request.proposer or "system"
+    new_proposal = Proposal(
+        token_id=token_id,
+        on_chain_address=str(proposal_pda),
+        proposal_number=next_num,
+        proposer=proposer,
+        action_type=request.action_type,
+        action_data=request.action_data or {},
+        description=request.description,
+        votes_for=0,
+        votes_against=0,
+        votes_abstain=0,
+        status="active",
+        voting_starts=now,
+        voting_ends=voting_ends,
+        execution_delay_seconds=0,
+        snapshot_slot=0,  # Would be current slot in production
+    )
+    db.add(new_proposal)
+    await db.commit()
+    await db.refresh(new_proposal)
+
     return {
-        "message": "Transaction prepared for signing",
+        "success": True,
+        "message": "Proposal created successfully",
+        "proposal_id": new_proposal.id,
         "proposal_number": next_num,
+        "voting_ends": voting_ends.isoformat(),
         "proposal_pda": str(proposal_pda),
-        "instruction": {
-            "program": str(solana_client.program_addresses.governance),
-            "action": "create_proposal",
-            "data": {
-                "action_type": request.action_type,
-                "action_data": request.action_data,
-                "description": request.description,
-            }
-        }
     }
 
 
@@ -146,7 +174,12 @@ async def vote_on_proposal(
     proposal_id: int = Path(...),
     db: AsyncSession = Depends(get_db)
 ):
-    """Vote on a proposal - returns unsigned transaction for client signing"""
+    """Vote on a proposal and update vote counts"""
+    # Verify voter address is provided
+    voter = request.voter
+    if not voter:
+        raise HTTPException(status_code=400, detail="Voter wallet address is required")
+
     # Verify proposal exists and is active
     result = await db.execute(
         select(Proposal).where(
@@ -167,26 +200,55 @@ async def vote_on_proposal(
     if proposal.status not in ["pending", "active"]:
         raise HTTPException(status_code=400, detail=f"Proposal is {proposal.status}, cannot vote")
 
-    # Get token for mint address
-    result = await db.execute(
-        select(Token).where(Token.token_id == token_id)
+    # Check for duplicate vote
+    existing_vote = await db.execute(
+        select(VoteRecord).where(
+            VoteRecord.proposal_id == proposal_id,
+            VoteRecord.voter == voter
+        )
     )
-    token = result.scalar_one_or_none()
+    if existing_vote.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="You have already voted on this proposal")
 
-    solana_client = await get_solana_client()
-    token_config_pda, _ = solana_client.derive_token_config_pda(Pubkey.from_string(token.mint_address))
-    proposal_pda, _ = solana_client.derive_proposal_pda(token_config_pda, proposal.proposal_number)
+    # Get voter's token balance for vote weight
+    balance_result = await db.execute(
+        select(CurrentBalance).where(
+            CurrentBalance.token_id == token_id,
+            CurrentBalance.wallet == voter
+        )
+    )
+    balance_record = balance_result.scalar_one_or_none()
+    vote_weight = balance_record.balance if balance_record else 1  # Default to 1 if no balance found
+
+    # Record the vote
+    vote_record = VoteRecord(
+        token_id=token_id,
+        proposal_id=proposal_id,
+        voter=voter,
+        vote=request.vote.value,
+        weight=vote_weight,
+        signature=str(uuid.uuid4()),  # Placeholder - would be actual tx signature in production
+    )
+    db.add(vote_record)
+
+    # Update vote counts
+    if request.vote.value == "for":
+        proposal.votes_for += vote_weight
+    elif request.vote.value == "against":
+        proposal.votes_against += vote_weight
+    else:  # abstain
+        proposal.votes_abstain += vote_weight
+
+    await db.commit()
+    await db.refresh(proposal)
 
     return {
-        "message": "Vote transaction prepared for signing",
-        "proposal_pda": str(proposal_pda),
-        "instruction": {
-            "program": str(solana_client.program_addresses.governance),
-            "action": "vote",
-            "data": {
-                "vote": request.vote.value,
-            }
-        }
+        "success": True,
+        "message": f"Vote recorded: {request.vote.value}",
+        "vote_weight": vote_weight,
+        "votes_for": proposal.votes_for,
+        "votes_against": proposal.votes_against,
+        "votes_abstain": proposal.votes_abstain,
     }
 
 

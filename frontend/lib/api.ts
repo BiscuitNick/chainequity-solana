@@ -237,10 +237,10 @@ class ApiClient {
     })
   }
 
-  async vote(tokenId: number, proposalId: number, voteFor: boolean) {
+  async vote(tokenId: number, proposalId: number, voteChoice: 'for' | 'against' | 'abstain', voterAddress?: string) {
     return this.request<any>(`/tokens/${tokenId}/governance/proposals/${proposalId}/vote`, {
       method: 'POST',
-      body: JSON.stringify({ vote_for: voteFor }),
+      body: JSON.stringify({ vote: voteChoice, voter: voterAddress }),
     })
   }
 
@@ -279,6 +279,13 @@ class ApiClient {
     return this.request<any>(`/tokens/${tokenId}/admin/pause`, {
       method: 'POST',
       body: JSON.stringify({ paused }),
+    })
+  }
+
+  async updateMultiSigThreshold(tokenId: number, threshold: number) {
+    return this.request<any>(`/tokens/${tokenId}/admin/multisig/threshold`, {
+      method: 'POST',
+      body: JSON.stringify({ threshold }),
     })
   }
 
@@ -543,7 +550,9 @@ export interface CreateProposalRequest {
   description: string
   action_type: string
   action_data?: Record<string, any>
-  voting_period_days: number
+  voting_period_days?: number
+  voting_period_minutes?: number
+  proposer?: string
 }
 
 export interface VotingPowerResponse {

@@ -6,6 +6,9 @@ import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/useAppStore'
 import { Shield, Users, Pause, Play, AlertTriangle, Key, RefreshCw } from 'lucide-react'
 import { api, MultiSigConfigResponse, PendingTransactionResponse } from '@/lib/api'
+import { BulkImportAllowlistModal } from '@/components/BulkImportAllowlistModal'
+import { UpdateMultiSigThresholdModal } from '@/components/UpdateMultiSigThresholdModal'
+import { EmergencyPauseModal } from '@/components/EmergencyPauseModal'
 
 export default function AdminPage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
@@ -14,6 +17,11 @@ export default function AdminPage() {
   const [pendingTxs, setPendingTxs] = useState<PendingTransactionResponse[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Modal states
+  const [showBulkImportModal, setShowBulkImportModal] = useState(false)
+  const [showThresholdModal, setShowThresholdModal] = useState(false)
+  const [showEmergencyPauseModal, setShowEmergencyPauseModal] = useState(false)
 
   const fetchAdminData = async () => {
     if (!selectedToken) return
@@ -289,21 +297,60 @@ export default function AdminPage() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-3">
-            <Button variant="outline" className="h-24 flex-col">
+            <Button
+              variant="outline"
+              className="h-24 flex-col"
+              onClick={() => setShowBulkImportModal(true)}
+            >
               <Users className="h-6 w-6 mb-2" />
               <span>Bulk Import Allowlist</span>
             </Button>
-            <Button variant="outline" className="h-24 flex-col">
+            <Button
+              variant="outline"
+              className="h-24 flex-col"
+              onClick={() => setShowThresholdModal(true)}
+            >
               <Shield className="h-6 w-6 mb-2" />
               <span>Update Multi-Sig Threshold</span>
             </Button>
-            <Button variant="outline" className="h-24 flex-col text-yellow-500">
+            <Button
+              variant="outline"
+              className="h-24 flex-col text-yellow-500"
+              onClick={() => setShowEmergencyPauseModal(true)}
+            >
               <AlertTriangle className="h-6 w-6 mb-2" />
               <span>Emergency Pause</span>
             </Button>
           </div>
         </CardContent>
       </Card>
+
+      {/* Modals */}
+      <BulkImportAllowlistModal
+        isOpen={showBulkImportModal}
+        onClose={() => setShowBulkImportModal(false)}
+        onSuccess={fetchAdminData}
+        tokenId={selectedToken.tokenId}
+      />
+
+      <UpdateMultiSigThresholdModal
+        isOpen={showThresholdModal}
+        onClose={() => setShowThresholdModal(false)}
+        onSuccess={fetchAdminData}
+        tokenId={selectedToken.tokenId}
+      />
+
+      <EmergencyPauseModal
+        isOpen={showEmergencyPauseModal}
+        onClose={() => setShowEmergencyPauseModal(false)}
+        onSuccess={() => {
+          setIsPaused(!isPaused)
+          fetchAdminData()
+        }}
+        tokenId={selectedToken.tokenId}
+        tokenSymbol={selectedToken.symbol}
+        currentlyPaused={isPaused}
+      />
     </div>
   )
 }

@@ -16,6 +16,8 @@ from app.schemas.admin import (
     CorporateActionRequest,
     ExecuteSplitRequest,
     ChangeSymbolRequest,
+    UpdateThresholdRequest,
+    PauseRequest,
 )
 from app.services.solana_client import get_solana_client
 from solders.pubkey import Pubkey
@@ -193,6 +195,69 @@ async def cancel_transaction(token_id: int = Path(...), tx_id: str = Path(...), 
                 "transaction_id": tx_id,
             }
         }
+    }
+
+
+@router.post("/multisig/threshold")
+async def update_threshold(
+    request: UpdateThresholdRequest,
+    token_id: int = Path(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update multi-sig threshold - returns unsigned transaction for client signing"""
+    # Get token
+    result = await db.execute(
+        select(Token).where(Token.token_id == token_id)
+    )
+    token = result.scalar_one_or_none()
+    if not token:
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    # Validate threshold
+    if request.threshold < 1:
+        raise HTTPException(status_code=400, detail="Threshold must be at least 1")
+
+    solana_client = await get_solana_client()
+    multisig_pda, _ = solana_client.derive_multisig_pda(Pubkey.from_string(token.mint_address))
+
+    return {
+        "message": "Multi-sig threshold update transaction prepared for signing",
+        "new_threshold": request.threshold,
+        "instruction": {
+            "program": str(solana_client.program_addresses.factory),
+            "action": "update_threshold",
+            "data": {
+                "threshold": request.threshold,
+            }
+        }
+    }
+
+
+@router.post("/pause")
+async def set_paused(
+    request: PauseRequest,
+    token_id: int = Path(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """Pause or unpause token transfers"""
+    # Get token
+    result = await db.execute(
+        select(Token).where(Token.token_id == token_id)
+    )
+    token = result.scalar_one_or_none()
+    if not token:
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    # Update the paused state
+    token.is_paused = request.paused
+    await db.commit()
+
+    action = "paused" if request.paused else "resumed"
+
+    return {
+        "success": True,
+        "message": f"Token transfers have been {action}",
+        "is_paused": token.is_paused,
     }
 
 

@@ -40,13 +40,18 @@ class ProposalResponse(BaseModel):
 
 
 class CreateProposalRequest(BaseModel):
+    title: str
     action_type: str
-    action_data: Dict[str, Any]
+    action_data: Dict[str, Any] = {}
     description: str
+    voting_period_days: Optional[int] = None  # For backwards compatibility
+    voting_period_minutes: Optional[int] = None  # For demo mode - short periods
+    proposer: Optional[str] = None  # Wallet address of proposer
 
 
 class VoteRequest(BaseModel):
     vote: VoteChoice
+    voter: Optional[str] = None  # Wallet address of voter
 
 
 class VotingPowerResponse(BaseModel):

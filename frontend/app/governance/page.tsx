@@ -9,8 +9,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useAppStore } from '@/stores/useAppStore'
-import { Plus, ThumbsUp, ThumbsDown, Minus, Clock, CheckCircle, XCircle, RefreshCw, Vote } from 'lucide-react'
+import { Plus, ThumbsUp, ThumbsDown, Minus, Clock, CheckCircle, XCircle, RefreshCw, Vote, Wallet } from 'lucide-react'
 import { api, Proposal } from '@/lib/api'
+import { useSolanaWallet } from '@/hooks/useSolana'
 
 // Governance action types
 const GOVERNANCE_ACTIONS = [
@@ -30,6 +31,7 @@ const GOVERNANCE_ACTIONS = [
 
 export default function GovernancePage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
+  const { isConnected, publicKey } = useSolanaWallet()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [filter, setFilter] = useState<'all' | 'active' | 'passed' | 'rejected'>('all')
   const [proposals, setProposals] = useState<Proposal[]>([])
@@ -40,7 +42,7 @@ export default function GovernancePage() {
   // Create proposal form state
   const [actionType, setActionType] = useState('')
   const [description, setDescription] = useState('')
-  const [wallet, setWallet] = useState('')
+  const [targetWallet, setTargetWallet] = useState('')
   const [amount, setAmount] = useState('')
   const [paymentToken, setPaymentToken] = useState('')
   const [multiplier, setMultiplier] = useState('2')
@@ -71,8 +73,12 @@ export default function GovernancePage() {
 
   const handleVote = async (proposalId: number, voteType: 'for' | 'against' | 'abstain') => {
     if (!selectedToken) return
+    if (!isConnected || !publicKey) {
+      setError('Please connect your wallet to vote')
+      return
+    }
     try {
-      await api.vote(selectedToken.tokenId, proposalId, voteType === 'for')
+      await api.vote(selectedToken.tokenId, proposalId, voteType, publicKey.toString())
       fetchProposals()
     } catch (e: any) {
       console.error('Failed to vote:', e)
@@ -83,7 +89,7 @@ export default function GovernancePage() {
   const resetForm = () => {
     setActionType('')
     setDescription('')
-    setWallet('')
+    setTargetWallet('')
     setAmount('')
     setPaymentToken('')
     setMultiplier('2')
@@ -94,6 +100,10 @@ export default function GovernancePage() {
 
   const handleCreateProposal = async () => {
     if (!selectedToken || !actionType || !description) return
+    if (!isConnected || !publicKey) {
+      setError('Please connect your wallet to create a proposal')
+      return
+    }
 
     setSubmitting(true)
     setError(null)
@@ -103,12 +113,27 @@ export default function GovernancePage() {
 
     // Build action_data based on action type
     const actionData: Record<string, any> = {}
-    if (selectedAction.requiresWallet) actionData.wallet = wallet
+    if (selectedAction.requiresWallet) actionData.wallet = targetWallet
     if (selectedAction.requiresAmount) actionData.amount = parseInt(amount) || 0
     if (selectedAction.requiresToken) actionData.token = paymentToken
     if (selectedAction.requiresMultiplier) actionData.multiplier = parseInt(multiplier) || 2
     if (selectedAction.requiresSymbol) actionData.new_symbol = newSymbol
     if (selectedAction.requiresThreshold) actionData.new_threshold = parseInt(threshold) || 2
+
+    // Parse voting period - support both minutes and days
+    let voting_period_days: number | undefined
+    let voting_period_minutes: number | undefined
+
+    if (votingPeriodDays.endsWith('m')) {
+      // Minutes format: "5m", "15m", etc.
+      voting_period_minutes = parseInt(votingPeriodDays.replace('m', '')) || 5
+    } else if (votingPeriodDays.endsWith('h')) {
+      // Hours format: "1h" = 60 minutes
+      voting_period_minutes = (parseInt(votingPeriodDays.replace('h', '')) || 1) * 60
+    } else {
+      // Days format: "1", "3", etc.
+      voting_period_days = parseInt(votingPeriodDays) || 3
+    }
 
     try {
       await api.createProposal(selectedToken.tokenId, {
@@ -116,7 +141,9 @@ export default function GovernancePage() {
         description,
         action_type: actionType,
         action_data: actionData,
-        voting_period_days: parseInt(votingPeriodDays) || 3,
+        voting_period_days,
+        voting_period_minutes,
+        proposer: publicKey.toString(),
       })
       setShowCreateModal(false)
       resetForm()
@@ -188,7 +215,7 @@ export default function GovernancePage() {
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button onClick={() => setShowCreateModal(true)}>
+          <Button onClick={() => setShowCreateModal(true)} disabled={!isConnected}>
             <Plus className="h-4 w-4 mr-2" />
             Create Proposal
           </Button>
@@ -203,8 +230,25 @@ export default function GovernancePage() {
         </Card>
       )}
 
+      {/* Wallet Connection Warning */}
+      {!isConnected && (
+        <Card className="border-yellow-500/50 bg-yellow-500/10">
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-3">
+              <Wallet className="h-6 w-6 text-yellow-500" />
+              <div>
+                <p className="font-medium text-yellow-500">Wallet Not Connected</p>
+                <p className="text-sm text-muted-foreground">
+                  Connect your wallet to create proposals and vote. You can still view existing proposals.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Voting Power Card */}
-      {votingPower > 0 && (
+      {isConnected && votingPower > 0 && (
         <Card className="border-primary/50 bg-primary/5">
           <CardContent className="pt-4">
             <div className="flex items-center justify-between">
@@ -350,11 +394,12 @@ export default function GovernancePage() {
                     </div>
 
                     {proposal.status === 'active' && (
-                      <div className="mt-4 flex gap-2">
+                      <div className="mt-4 flex gap-2 items-center">
                         <Button
                           size="sm"
                           className="bg-green-500 hover:bg-green-600"
                           onClick={() => handleVote(proposal.id, 'for')}
+                          disabled={!isConnected}
                         >
                           <ThumbsUp className="h-3 w-3 mr-1" />
                           Vote For
@@ -364,6 +409,7 @@ export default function GovernancePage() {
                           variant="outline"
                           className="text-red-500 border-red-500 hover:bg-red-500/10"
                           onClick={() => handleVote(proposal.id, 'against')}
+                          disabled={!isConnected}
                         >
                           <ThumbsDown className="h-3 w-3 mr-1" />
                           Vote Against
@@ -372,10 +418,16 @@ export default function GovernancePage() {
                           size="sm"
                           variant="outline"
                           onClick={() => handleVote(proposal.id, 'abstain')}
+                          disabled={!isConnected}
                         >
                           <Minus className="h-3 w-3 mr-1" />
                           Abstain
                         </Button>
+                        {!isConnected && (
+                          <span className="text-xs text-muted-foreground ml-2">
+                            Connect wallet to vote
+                          </span>
+                        )}
                       </div>
                     )}
 
@@ -434,12 +486,12 @@ export default function GovernancePage() {
 
             {selectedAction?.requiresWallet && (
               <div className="space-y-2">
-                <Label htmlFor="wallet">Wallet Address</Label>
+                <Label htmlFor="targetWallet">Wallet Address</Label>
                 <Input
-                  id="wallet"
+                  id="targetWallet"
                   placeholder="Enter wallet address..."
-                  value={wallet}
-                  onChange={(e) => setWallet(e.target.value)}
+                  value={targetWallet}
+                  onChange={(e) => setTargetWallet(e.target.value)}
                 />
               </div>
             )}
@@ -525,6 +577,11 @@ export default function GovernancePage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="2m">2 minutes (demo)</SelectItem>
+                  <SelectItem value="5m">5 minutes (demo)</SelectItem>
+                  <SelectItem value="15m">15 minutes (demo)</SelectItem>
+                  <SelectItem value="30m">30 minutes (demo)</SelectItem>
+                  <SelectItem value="1h">1 hour (demo)</SelectItem>
                   <SelectItem value="1">1 day</SelectItem>
                   <SelectItem value="3">3 days</SelectItem>
                   <SelectItem value="5">5 days</SelectItem>

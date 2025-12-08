@@ -428,10 +428,10 @@ export default function DividendsPage() {
                               ${payment.dividend_per_share?.toFixed(4) || '—'}
                             </td>
                             <td className="py-2 px-2 text-right text-xs">
-                              {((payment.shares || 0) / 1000000).toLocaleString()}
+                              {(payment.shares || 0).toLocaleString()}
                             </td>
                             <td className="py-2 px-2 text-right font-medium text-xs">
-                              ${((payment.amount || 0) / 1000000).toFixed(2)}
+                              ${(payment.amount || 0).toLocaleString()}
                             </td>
                             <td className="py-2 px-2 text-center">
                               <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs ${
