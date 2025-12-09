@@ -245,6 +245,45 @@ async def update_share_class(
     return _build_share_class_response(share_class)
 
 
+@router.delete("/{share_class_id}")
+async def delete_share_class(
+    token_id: int = Path(...),
+    share_class_id: int = Path(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Delete a share class.
+
+    Only allowed if no shares have been issued for this class.
+    """
+    # Get share class
+    result = await db.execute(
+        select(ShareClass).where(
+            ShareClass.token_id == token_id,
+            ShareClass.id == share_class_id
+        )
+    )
+    share_class = result.scalar_one_or_none()
+    if not share_class:
+        raise HTTPException(status_code=404, detail="Share class not found")
+
+    # Check if any positions exist
+    result = await db.execute(
+        select(SharePosition).where(SharePosition.share_class_id == share_class_id)
+    )
+    positions = result.scalars().all()
+    if positions:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete share class with existing positions"
+        )
+
+    await db.delete(share_class)
+    await db.commit()
+
+    return {"message": f"Share class '{share_class.symbol}' deleted successfully"}
+
+
 @router.post("/issue", response_model=IssueSharesResponse)
 async def issue_shares(
     request: IssueSharesRequest,

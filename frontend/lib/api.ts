@@ -333,6 +333,12 @@ class ApiClient {
     return this.request<ShareClass>(`/tokens/${tokenId}/share-classes/${shareClassId}`)
   }
 
+  async deleteShareClass(tokenId: number, shareClassId: number) {
+    return this.request<{ message: string }>(`/tokens/${tokenId}/share-classes/${shareClassId}`, {
+      method: 'DELETE',
+    })
+  }
+
   async getSharePositions(tokenId: number, shareClassId: number) {
     return this.request<SharePosition[]>(`/tokens/${tokenId}/share-classes/${shareClassId}/positions`)
   }

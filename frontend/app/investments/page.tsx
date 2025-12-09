@@ -536,40 +536,49 @@ export default function InvestmentsPage() {
       {activeTab === 'overview' && (
         <div className="grid gap-6 md:grid-cols-2">
           {/* Share Classes */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Layers className="h-5 w-5" />
-                Share Classes
-              </CardTitle>
-              <CardDescription>
-                {shareClasses.length} share class{shareClasses.length !== 1 ? 'es' : ''} configured
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="flex justify-center py-8">
-                  <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
-                </div>
-              ) : shareClasses.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">No share classes configured</p>
-              ) : (
-                <div className="space-y-3">
-                  {shareClasses.map((sc) => (
-                    <div key={sc.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                      <div>
-                        <p className="font-medium">{sc.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Priority {sc.priority} | {sc.preference_multiple}x preference
-                        </p>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          {(() => {
+            // Filter to only show share classes with issued shares
+            const shareClassesWithShares = shareClasses.filter((sc) => {
+              const summary = enhancedCapTable?.share_classes?.find((s) => s.id === sc.id)
+              return summary && summary.total_shares > 0
+            })
+            return (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Layers className="h-5 w-5" />
+                    Share Classes
+                  </CardTitle>
+                  <CardDescription>
+                    {shareClassesWithShares.length} share class{shareClassesWithShares.length !== 1 ? 'es' : ''} with issued shares
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {loading ? (
+                    <div className="flex justify-center py-8">
+                      <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
                     </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                  ) : shareClassesWithShares.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">No shares issued yet</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {shareClassesWithShares.map((sc) => (
+                        <div key={sc.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                          <div>
+                            <p className="font-medium">{sc.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Priority {sc.priority} | {sc.preference_multiple}x preference
+                            </p>
+                          </div>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          })()}
 
           {/* Funding Rounds */}
           <Card>
@@ -711,47 +720,53 @@ export default function InvestmentsPage() {
           </Card>
 
           {/* Cap Table Summary by Share Class */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <PieChart className="h-5 w-5" />
-                Share Class Distribution
-              </CardTitle>
-              <CardDescription>Ownership by share class</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="flex justify-center py-8">
-                  <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
-                </div>
-              ) : !enhancedCapTable?.share_classes?.length ? (
-                <p className="text-center text-muted-foreground py-8">No share class data</p>
-              ) : (
-                <div className="space-y-4">
-                  {enhancedCapTable.share_classes.map((sc) => {
-                    const pct = totalShares > 0 ? (sc.total_shares / totalShares) * 100 : 0
-                    return (
-                      <div key={sc.id}>
-                        <div className="flex justify-between text-sm mb-1">
-                          <span className="font-medium">{sc.name}</span>
-                          <span>{pct.toFixed(1)}%</span>
-                        </div>
-                        <div className="w-full bg-muted rounded-full h-3">
-                          <div
-                            className="bg-primary h-3 rounded-full transition-all"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {sc.total_shares.toLocaleString()} shares | {formatDollars(sc.total_value)}
-                        </p>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {(() => {
+            // Filter to only show share classes with issued shares
+            const shareClassesWithShares = enhancedCapTable?.share_classes?.filter((sc) => sc.total_shares > 0) || []
+            return (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <PieChart className="h-5 w-5" />
+                    Share Class Distribution
+                  </CardTitle>
+                  <CardDescription>Ownership by share class</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {loading ? (
+                    <div className="flex justify-center py-8">
+                      <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : shareClassesWithShares.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">No shares issued yet</p>
+                  ) : (
+                    <div className="space-y-4">
+                      {shareClassesWithShares.map((sc) => {
+                        const pct = totalShares > 0 ? (sc.total_shares / totalShares) * 100 : 0
+                        return (
+                          <div key={sc.id}>
+                            <div className="flex justify-between text-sm mb-1">
+                              <span className="font-medium">{sc.name}</span>
+                              <span>{pct.toFixed(1)}%</span>
+                            </div>
+                            <div className="w-full bg-muted rounded-full h-3">
+                              <div
+                                className="bg-primary h-3 rounded-full transition-all"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {sc.total_shares.toLocaleString()} shares | {formatDollars(sc.total_value)}
+                            </p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          })()}
         </div>
       )}
 

@@ -22,13 +22,42 @@ import {
   DollarSign,
   Check,
   Copy,
+  Trash2,
 } from 'lucide-react'
 import {
   api,
   ShareClass,
   SharePosition,
   IssueSharesRequest,
+  CreateShareClassRequest,
 } from '@/lib/api'
+
+// Prepopulated share class templates
+// Priority: Lower number = higher priority in liquidation waterfall
+// Preference Multiple: 1 = 1x liquidation preference, 2 = 2x, etc.
+const SHARE_CLASS_TEMPLATES: CreateShareClassRequest[] = [
+  // Common stock - lowest priority, default for vested shares
+  { name: 'Common', symbol: 'CM', priority: 90, preference_multiple: 1 },
+  // Seed rounds
+  { name: 'Seed', symbol: 'SD1', priority: 80, preference_multiple: 1 },
+  { name: 'Seed', symbol: 'SD2', priority: 80, preference_multiple: 2 },
+  { name: 'Seed', symbol: 'SD3', priority: 80, preference_multiple: 3 },
+  // Series A
+  { name: 'Series A', symbol: 'A1', priority: 70, preference_multiple: 1 },
+  { name: 'Series A', symbol: 'A2', priority: 70, preference_multiple: 2 },
+  { name: 'Series A', symbol: 'A3', priority: 70, preference_multiple: 3 },
+  // Series B
+  { name: 'Series B', symbol: 'B1', priority: 60, preference_multiple: 1 },
+  { name: 'Series B', symbol: 'B2', priority: 60, preference_multiple: 2 },
+  { name: 'Series B', symbol: 'B3', priority: 60, preference_multiple: 3 },
+  // Series C
+  { name: 'Series C', symbol: 'C1', priority: 50, preference_multiple: 1 },
+  { name: 'Series C', symbol: 'C2', priority: 50, preference_multiple: 2 },
+  { name: 'Series C', symbol: 'C3', priority: 50, preference_multiple: 3 },
+]
+
+// Default share class - vested shares convert to this
+const DEFAULT_SHARE_CLASS = SHARE_CLASS_TEMPLATES[0] // Common
 
 // Helper to format cents as dollars
 const formatDollars = (cents: number) => {
@@ -67,6 +96,8 @@ export default function IssuancePage() {
   const [creatingClass, setCreatingClass] = useState(false)
 
   const [copiedWallet, setCopiedWallet] = useState<string | null>(null)
+  const [initializingClasses, setInitializingClasses] = useState(false)
+  const [deletingClassId, setDeletingClassId] = useState<number | null>(null)
 
   const copyToClipboard = async (wallet: string) => {
     await navigator.clipboard.writeText(wallet)
@@ -124,6 +155,65 @@ export default function IssuancePage() {
       setError(e.detail || 'Failed to create share class')
     } finally {
       setCreatingClass(false)
+    }
+  }
+
+  const handleInitializeShareClasses = async () => {
+    if (!selectedToken) return
+    setInitializingClasses(true)
+    setError(null)
+
+    // Get existing symbols to avoid duplicates
+    const existingSymbols = new Set(shareClasses.map(sc => sc.symbol))
+    const templatesToCreate = SHARE_CLASS_TEMPLATES.filter(t => !existingSymbols.has(t.symbol))
+
+    if (templatesToCreate.length === 0) {
+      setSuccess('All standard share classes already exist')
+      setInitializingClasses(false)
+      return
+    }
+
+    let created = 0
+    let failed = 0
+
+    for (const template of templatesToCreate) {
+      try {
+        await api.createShareClass(selectedToken.tokenId, template)
+        created++
+      } catch (e: any) {
+        console.error(`Failed to create share class ${template.symbol}:`, e)
+        failed++
+      }
+    }
+
+    if (failed === 0) {
+      setSuccess(`Created ${created} share class${created !== 1 ? 'es' : ''} successfully`)
+    } else {
+      setError(`Created ${created} share classes, but ${failed} failed`)
+    }
+
+    await fetchData()
+    setInitializingClasses(false)
+  }
+
+  const handleDeleteShareClass = async (shareClassId: number, symbol: string) => {
+    if (!selectedToken) return
+
+    setDeletingClassId(shareClassId)
+    setError(null)
+
+    try {
+      await api.deleteShareClass(selectedToken.tokenId, shareClassId)
+      setSuccess(`Share class "${symbol}" deleted successfully`)
+      if (selectedClassId === shareClassId) {
+        setSelectedClassId(null)
+      }
+      await fetchData()
+    } catch (e: any) {
+      console.error('Failed to delete share class:', e)
+      setError(e.detail || 'Failed to delete share class')
+    } finally {
+      setDeletingClassId(null)
     }
   }
 
@@ -404,8 +494,8 @@ export default function IssuancePage() {
         </Card>
 
         {/* Share Classes */}
-        <Card>
-          <CardHeader>
+        <Card className="flex flex-col">
+          <CardHeader className="pb-3">
             <div className="flex justify-between items-center">
               <div>
                 <CardTitle className="flex items-center gap-2">
@@ -416,19 +506,34 @@ export default function IssuancePage() {
                   Configure share classes with liquidation preferences
                 </CardDescription>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowCreateClass(!showCreateClass)}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                New Class
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleInitializeShareClasses}
+                  disabled={initializingClasses}
+                >
+                  {initializingClasses ? (
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Layers className="h-4 w-4 mr-2" />
+                  )}
+                  Initialize Standard
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowCreateClass(!showCreateClass)}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Custom
+                </Button>
+              </div>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="flex-1 overflow-hidden pt-0">
             {showCreateClass && (
-              <div className="p-4 border rounded-lg space-y-4 bg-muted/50">
+              <div className="p-4 border rounded-lg space-y-4 bg-muted/50 mb-4">
                 <h4 className="font-semibold">Create Share Class</h4>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
@@ -501,43 +606,81 @@ export default function IssuancePage() {
                 <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
             ) : shareClasses.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">
-                No share classes configured. Create one to get started.
-              </p>
+              <div className="text-center py-8 space-y-3">
+                <p className="text-muted-foreground">
+                  No share classes configured.
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Click &quot;Initialize Standard&quot; to create Common, Seed, Series A, B, and C classes with 1x-3x preferences.
+                </p>
+              </div>
             ) : (
-              <div className="space-y-3">
-                {shareClasses.map((sc) => {
-                  const classPositions = positions.filter(p => p.share_class?.id === sc.id)
-                  const classShares = classPositions.reduce((sum, p) => sum + p.shares, 0)
-                  const classCostBasis = classPositions.reduce((sum, p) => sum + p.cost_basis, 0)
-                  return (
-                    <div
-                      key={sc.id}
-                      className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                        selectedClassId === sc.id ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
-                      }`}
-                      onClick={() => setSelectedClassId(sc.id)}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-medium">{sc.name}</p>
-                          <p className="text-sm text-muted-foreground">{sc.symbol}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-medium">{classShares.toLocaleString()} shares</p>
-                          <p className="text-sm text-muted-foreground">
-                            {formatDollars(classCostBasis)} invested
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
-                        <span>Priority {sc.priority}</span>
-                        <span>{sc.preference_multiple}x preference</span>
-                        <span>{classPositions.length} holders</span>
-                      </div>
-                    </div>
-                  )
-                })}
+              <div className="overflow-auto max-h-[400px]">
+                <table className="w-full">
+                  <thead className="sticky top-0 bg-background">
+                    <tr className="border-b">
+                      <th className="text-left py-2 px-3 font-medium text-sm">Name</th>
+                      <th className="text-left py-2 px-3 font-medium text-sm">Symbol</th>
+                      <th className="text-center py-2 px-3 font-medium text-sm">Priority</th>
+                      <th className="text-center py-2 px-3 font-medium text-sm">Pref</th>
+                      <th className="w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...shareClasses]
+                      .sort((a, b) => b.priority - a.priority)
+                      .map((sc) => {
+                        const classPositions = positions.filter(p => p.share_class?.id === sc.id)
+                        const hasShares = classPositions.some(p => p.shares > 0)
+                        return (
+                          <tr
+                            key={sc.id}
+                            className={`border-b cursor-pointer transition-colors ${
+                              selectedClassId === sc.id ? 'bg-primary/10' : 'hover:bg-muted/50'
+                            }`}
+                            onClick={() => setSelectedClassId(sc.id)}
+                          >
+                            <td className="py-2 px-3 text-sm">{sc.name}</td>
+                            <td className="py-2 px-3">
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                sc.priority <= 50 ? 'bg-purple-500/10 text-purple-600' :
+                                sc.priority <= 70 ? 'bg-blue-500/10 text-blue-600' :
+                                sc.priority <= 80 ? 'bg-green-500/10 text-green-600' :
+                                'bg-gray-500/10 text-gray-600'
+                              }`}>
+                                {sc.symbol}
+                              </span>
+                            </td>
+                            <td className="py-2 px-3 text-center text-sm text-muted-foreground">
+                              {sc.priority}
+                            </td>
+                            <td className="py-2 px-3 text-center text-sm">
+                              {sc.preference_multiple}x
+                            </td>
+                            <td className="py-2 px-1">
+                              {!hasShares && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleDeleteShareClass(sc.id, sc.symbol)
+                                  }}
+                                  disabled={deletingClassId === sc.id}
+                                  className="p-1 hover:bg-red-500/10 rounded transition-colors text-muted-foreground hover:text-red-500 disabled:opacity-50"
+                                  title="Delete share class"
+                                >
+                                  {deletingClassId === sc.id ? (
+                                    <RefreshCw className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-4 w-4" />
+                                  )}
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                  </tbody>
+                </table>
               </div>
             )}
           </CardContent>
