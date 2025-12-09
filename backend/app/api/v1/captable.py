@@ -387,12 +387,8 @@ async def get_enhanced_captable(
     if not token:
         raise HTTPException(status_code=404, detail="Token not found")
 
+    # Valuation is optional - if not set, we'll just show shares without dollar values
     current_valuation = token.current_valuation or 0
-    if current_valuation <= 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Token has no current valuation. Set a valuation first using POST /valuations."
-        )
 
     # Get current slot
     solana_client = await get_solana_client()
@@ -405,12 +401,6 @@ async def get_enhanced_captable(
         .order_by(ShareClass.priority)
     )
     share_classes = result.scalars().all()
-
-    if not share_classes:
-        raise HTTPException(
-            status_code=400,
-            detail="No share classes found. Create share classes first."
-        )
 
     # Get all share positions
     result = await db.execute(

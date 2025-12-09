@@ -400,6 +400,24 @@ class ApiClient {
     })
   }
 
+  async cancelConvertible(tokenId: number, convertibleId: number) {
+    return this.request<ConvertibleInstrument>(`/tokens/${tokenId}/convertibles/${convertibleId}/cancel`, {
+      method: 'POST',
+    })
+  }
+
+  async cancelFundingRound(tokenId: number, roundId: number) {
+    return this.request<FundingRound>(`/tokens/${tokenId}/funding-rounds/${roundId}/cancel`, {
+      method: 'POST',
+    })
+  }
+
+  async removeInvestment(tokenId: number, roundId: number, investmentId: number) {
+    return this.request<void>(`/tokens/${tokenId}/funding-rounds/${roundId}/investments/${investmentId}`, {
+      method: 'DELETE',
+    })
+  }
+
   // Valuations
   async getValuationHistory(tokenId: number) {
     return this.request<ValuationEvent[]>(`/tokens/${tokenId}/valuations`)
@@ -764,7 +782,7 @@ export interface CorporateAction {
 }
 
 // Investment Modeling Types
-export type RoundType = 'seed' | 'series_a' | 'series_b' | 'series_c' | 'series_d' | 'bridge' | 'other'
+export type RoundType = 'pre_seed' | 'seed' | 'series_a' | 'series_b' | 'series_c' | 'bridge' | 'other'
 export type InstrumentType = 'safe' | 'convertible_note'
 export type SafeType = 'pre_money' | 'post_money'
 export type InstrumentStatus = 'outstanding' | 'converted' | 'cancelled'
@@ -798,19 +816,33 @@ export interface SharePosition {
 
 export interface FundingRound {
   id: number
-  token_id: number
+  token_id?: number
   name: string
-  round_type: RoundType
+  round_type: string
   share_class_id?: number
+  share_class?: ShareClass
   pre_money_valuation: number
   amount_raised: number
   post_money_valuation: number
   price_per_share: number
   shares_issued: number
-  status: RoundStatus
-  opened_at: string
+  status: string
+  investments?: FundingRoundInvestment[]
+  created_at: string
   closed_at?: string
   notes?: string
+}
+
+export interface FundingRoundInvestment {
+  id: number
+  investor_wallet: string
+  investor_name?: string
+  amount: number
+  shares_received: number
+  price_per_share: number
+  status: string
+  tx_signature?: string
+  created_at: string
 }
 
 export interface Investment {
@@ -826,21 +858,23 @@ export interface Investment {
 
 export interface ConvertibleInstrument {
   id: number
-  token_id: number
+  token_id?: number
   instrument_type: InstrumentType
-  safe_type?: SafeType
-  investor_wallet: string
+  name?: string
+  holder_wallet: string
+  holder_name?: string
   principal_amount: number
+  accrued_amount: number  // Principal + interest
   valuation_cap?: number
   discount_rate?: number
   interest_rate?: number
   maturity_date?: string
+  safe_type?: SafeType
   status: InstrumentStatus
-  converted_to_round_id?: number
-  conversion_shares?: number
+  converted_at?: string
+  shares_received?: number
   conversion_price?: number
   created_at: string
-  converted_at?: string
 }
 
 export interface ValuationEvent {
@@ -1009,19 +1043,22 @@ export interface CreateFundingRoundRequest {
 
 export interface AddInvestmentRequest {
   investor_wallet: string
-  amount_invested: number
-  notes?: string
+  investor_name?: string
+  amount: number  // In cents
 }
 
 export interface CreateConvertibleRequest {
   instrument_type: InstrumentType
-  safe_type?: SafeType
-  investor_wallet: string
-  principal_amount: number
-  valuation_cap?: number
-  discount_rate?: number
-  interest_rate?: number
-  maturity_date?: string
+  name?: string
+  holder_wallet: string
+  holder_name?: string
+  principal_amount: number  // In cents
+  valuation_cap?: number  // In cents
+  discount_rate?: number  // 0.20 = 20%
+  interest_rate?: number  // 0.05 = 5% (for notes)
+  maturity_date?: string  // For notes
+  safe_type?: SafeType  // For SAFEs
+  notes?: string
 }
 
 export interface CreateValuationRequest {
