@@ -13,20 +13,11 @@ import { Plus, ThumbsUp, ThumbsDown, Minus, Clock, CheckCircle, XCircle, Refresh
 import { api, Proposal } from '@/lib/api'
 import { useSolanaWallet } from '@/hooks/useSolana'
 
-// Governance action types
+// Governance action types - Limited to core corporate actions
 const GOVERNANCE_ACTIONS = [
-  { value: 'add_to_allowlist', label: 'Add to Allowlist', requiresWallet: true },
-  { value: 'remove_from_allowlist', label: 'Remove from Allowlist', requiresWallet: true },
-  { value: 'update_daily_limit', label: 'Update Daily Transfer Limit', requiresWallet: true, requiresAmount: true },
-  { value: 'update_global_limit', label: 'Update Global Transfer Limit', requiresAmount: true },
-  { value: 'initiate_dividend', label: 'Initiate Dividend', requiresAmount: true, requiresToken: true },
   { value: 'stock_split', label: 'Stock Split', requiresMultiplier: true },
   { value: 'symbol_change', label: 'Change Symbol', requiresSymbol: true },
-  { value: 'pause_transfers', label: 'Pause Transfers' },
-  { value: 'unpause_transfers', label: 'Unpause Transfers' },
-  { value: 'add_multisig_signer', label: 'Add Multisig Signer', requiresWallet: true },
-  { value: 'remove_multisig_signer', label: 'Remove Multisig Signer', requiresWallet: true },
-  { value: 'update_threshold', label: 'Update Multisig Threshold', requiresThreshold: true },
+  { value: 'initiate_dividend', label: 'Initiate Dividend', requiresAmount: true, requiresToken: true },
 ]
 
 export default function GovernancePage() {
@@ -42,12 +33,10 @@ export default function GovernancePage() {
   // Create proposal form state
   const [actionType, setActionType] = useState('')
   const [description, setDescription] = useState('')
-  const [targetWallet, setTargetWallet] = useState('')
   const [amount, setAmount] = useState('')
   const [paymentToken, setPaymentToken] = useState('')
-  const [multiplier, setMultiplier] = useState('2')
+  const [multiplier, setMultiplier] = useState('7')
   const [newSymbol, setNewSymbol] = useState('')
-  const [threshold, setThreshold] = useState('2')
   const [votingPeriodDays, setVotingPeriodDays] = useState('3')
   const [submitting, setSubmitting] = useState(false)
 
@@ -91,12 +80,10 @@ export default function GovernancePage() {
   const resetForm = () => {
     setActionType('')
     setDescription('')
-    setTargetWallet('')
     setAmount('')
     setPaymentToken('')
-    setMultiplier('2')
+    setMultiplier('7')
     setNewSymbol('')
-    setThreshold('2')
     setVotingPeriodDays('3')
   }
 
@@ -115,12 +102,10 @@ export default function GovernancePage() {
 
     // Build action_data based on action type
     const actionData: Record<string, any> = {}
-    if (selectedAction.requiresWallet) actionData.wallet = targetWallet
     if (selectedAction.requiresAmount) actionData.amount = parseInt(amount) || 0
-    if (selectedAction.requiresToken) actionData.token = paymentToken
-    if (selectedAction.requiresMultiplier) actionData.multiplier = parseInt(multiplier) || 2
+    if (selectedAction.requiresToken) actionData.payment_token = paymentToken
+    if (selectedAction.requiresMultiplier) actionData.multiplier = parseInt(multiplier) || 7
     if (selectedAction.requiresSymbol) actionData.new_symbol = newSymbol
-    if (selectedAction.requiresThreshold) actionData.new_threshold = parseInt(threshold) || 2
 
     // Parse voting period - support both minutes and days
     let voting_period_days: number | undefined
@@ -486,18 +471,6 @@ export default function GovernancePage() {
               />
             </div>
 
-            {selectedAction?.requiresWallet && (
-              <div className="space-y-2">
-                <Label htmlFor="targetWallet">Wallet Address</Label>
-                <Input
-                  id="targetWallet"
-                  placeholder="Enter wallet address..."
-                  value={targetWallet}
-                  onChange={(e) => setTargetWallet(e.target.value)}
-                />
-              </div>
-            )}
-
             {selectedAction?.requiresAmount && (
               <div className="space-y-2">
                 <Label htmlFor="amount">Amount</Label>
@@ -551,24 +524,6 @@ export default function GovernancePage() {
                   onChange={(e) => setNewSymbol(e.target.value.toUpperCase().slice(0, 10))}
                   maxLength={10}
                 />
-              </div>
-            )}
-
-            {selectedAction?.requiresThreshold && (
-              <div className="space-y-2">
-                <Label htmlFor="threshold">New Threshold</Label>
-                <Select value={threshold} onValueChange={setThreshold}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {[1, 2, 3, 4, 5].map((t) => (
-                      <SelectItem key={t} value={t.toString()}>
-                        {t} signature{t > 1 ? 's' : ''} required
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
             )}
 

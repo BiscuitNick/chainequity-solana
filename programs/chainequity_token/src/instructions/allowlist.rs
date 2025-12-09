@@ -30,7 +30,7 @@ pub struct AddToAllowlist<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn add_handler(ctx: Context<AddToAllowlist>, kyc_level: u8) -> Result<()> {
+pub fn add_handler(ctx: Context<AddToAllowlist>) -> Result<()> {
     let entry = &mut ctx.accounts.allowlist_entry;
     let clock = Clock::get()?;
 
@@ -39,13 +39,11 @@ pub fn add_handler(ctx: Context<AddToAllowlist>, kyc_level: u8) -> Result<()> {
     entry.approved_at = clock.unix_timestamp;
     entry.approved_by = ctx.accounts.authority.key();
     entry.status = AllowlistStatus::Active;
-    entry.kyc_level = kyc_level;
     entry.bump = ctx.bumps.allowlist_entry;
 
     emit!(WalletApproved {
         token_config: ctx.accounts.token_config.key(),
         wallet: ctx.accounts.wallet.key(),
-        kyc_level,
         approved_by: ctx.accounts.authority.key(),
         slot: clock.slot,
     });

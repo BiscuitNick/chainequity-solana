@@ -112,12 +112,12 @@ export function useAddToAllowlist(tokenId: number | null) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const addToAllowlist = async (address: string, kycLevel: number) => {
+  const addToAllowlist = async (address: string) => {
     if (tokenId === null || tokenId === undefined) return null
     setLoading(true)
     setError(null)
     try {
-      const result = await api.addToAllowlist(tokenId, { address, kyc_level: kycLevel })
+      const result = await api.addToAllowlist(tokenId, { address })
       return result
     } catch (e: any) {
       setError(e.detail || e.message || 'Failed to add to allowlist')

@@ -9,7 +9,6 @@ use crate::state::{AllowlistStatus, TerminationType, VestingType};
 pub struct WalletApproved {
     pub token_config: Pubkey,
     pub wallet: Pubkey,
-    pub kyc_level: u8,
     pub approved_by: Pubkey,
     pub slot: u64,
 }

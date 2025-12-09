@@ -4,15 +4,13 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/useAppStore'
-import { Shield, Users, Pause, Play, AlertTriangle, Key, RefreshCw } from 'lucide-react'
+import { Shield, Users, Key, RefreshCw } from 'lucide-react'
 import { api, MultiSigConfigResponse, PendingTransactionResponse } from '@/lib/api'
 import { BulkImportAllowlistModal } from '@/components/BulkImportAllowlistModal'
 import { UpdateMultiSigThresholdModal } from '@/components/UpdateMultiSigThresholdModal'
-import { EmergencyPauseModal } from '@/components/EmergencyPauseModal'
 
 export default function AdminPage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
-  const [isPaused, setIsPaused] = useState(false)
   const [multiSigConfig, setMultiSigConfig] = useState<MultiSigConfigResponse | null>(null)
   const [pendingTxs, setPendingTxs] = useState<PendingTransactionResponse[]>([])
   const [loading, setLoading] = useState(false)
@@ -21,7 +19,6 @@ export default function AdminPage() {
   // Modal states
   const [showBulkImportModal, setShowBulkImportModal] = useState(false)
   const [showThresholdModal, setShowThresholdModal] = useState(false)
-  const [showEmergencyPauseModal, setShowEmergencyPauseModal] = useState(false)
 
   const fetchAdminData = async () => {
     if (!selectedToken) return
@@ -46,16 +43,6 @@ export default function AdminPage() {
   useEffect(() => {
     fetchAdminData()
   }, [selectedToken])
-
-  const handlePauseToggle = async () => {
-    if (!selectedToken) return
-    try {
-      await api.setPaused(selectedToken.tokenId, !isPaused)
-      setIsPaused(!isPaused)
-    } catch (e: any) {
-      setError(e?.detail || e?.message || 'Failed to toggle pause state')
-    }
-  }
 
   const handleApprove = async (txId: string) => {
     if (!selectedToken) return
@@ -103,45 +90,16 @@ export default function AdminPage() {
             Administrative controls for {selectedToken.symbol}
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={fetchAdminData} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-          <Button
-            variant={isPaused ? 'default' : 'destructive'}
-            onClick={handlePauseToggle}
-          >
-            {isPaused ? (
-              <>
-                <Play className="h-4 w-4 mr-2" />
-                Resume Trading
-              </>
-            ) : (
-              <>
-                <Pause className="h-4 w-4 mr-2" />
-                Pause Trading
-              </>
-            )}
-          </Button>
-        </div>
+        <Button variant="outline" onClick={fetchAdminData} disabled={loading}>
+          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
       </div>
 
       {error && (
         <Card className="border-red-500/50 bg-red-500/10">
           <CardContent className="pt-4">
             <p className="text-red-500">{error}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {isPaused && (
-        <Card className="border-red-500 bg-red-500/10">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-red-500">
-              <AlertTriangle className="h-5 w-5" />
-              <span className="font-semibold">Token transfers are currently paused</span>
-            </div>
           </CardContent>
         </Card>
       )}
@@ -292,7 +250,7 @@ export default function AdminPage() {
           <CardDescription>Common administrative tasks</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2">
             <Button
               variant="outline"
               className="h-24 flex-col"
@@ -308,14 +266,6 @@ export default function AdminPage() {
             >
               <Shield className="h-6 w-6 mb-2" />
               <span>Update Multi-Sig Threshold</span>
-            </Button>
-            <Button
-              variant="outline"
-              className="h-24 flex-col text-yellow-500"
-              onClick={() => setShowEmergencyPauseModal(true)}
-            >
-              <AlertTriangle className="h-6 w-6 mb-2" />
-              <span>Emergency Pause</span>
             </Button>
           </div>
         </CardContent>
@@ -334,18 +284,6 @@ export default function AdminPage() {
         onClose={() => setShowThresholdModal(false)}
         onSuccess={fetchAdminData}
         tokenId={selectedToken.tokenId}
-      />
-
-      <EmergencyPauseModal
-        isOpen={showEmergencyPauseModal}
-        onClose={() => setShowEmergencyPauseModal(false)}
-        onSuccess={() => {
-          setIsPaused(!isPaused)
-          fetchAdminData()
-        }}
-        tokenId={selectedToken.tokenId}
-        tokenSymbol={selectedToken.symbol}
-        currentlyPaused={isPaused}
       />
     </div>
   )

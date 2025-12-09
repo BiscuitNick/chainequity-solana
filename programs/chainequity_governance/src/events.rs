@@ -56,3 +56,36 @@ pub struct ProposalCancelled {
     pub cancelled_by: Pubkey,
     pub slot: u64,
 }
+
+// ============================================================================
+// GOVERNANCE ACTION EXECUTION EVENTS
+// ============================================================================
+
+#[event]
+pub struct StockSplitInitiated {
+    pub token_config: Pubkey,
+    pub proposal: Pubkey,
+    pub multiplier: u8,
+    pub initiated_by: Pubkey,
+    pub slot: u64,
+}
+
+#[event]
+pub struct SymbolChangeInitiated {
+    pub token_config: Pubkey,
+    pub proposal: Pubkey,
+    pub old_symbol: String,
+    pub new_symbol: String,
+    pub changed_by: Pubkey,
+    pub slot: u64,
+}
+
+#[event]
+pub struct DividendInitiated {
+    pub token_config: Pubkey,
+    pub proposal: Pubkey,
+    pub payment_token: Pubkey,
+    pub total_amount: u64,
+    pub initiated_by: Pubkey,
+    pub slot: u64,
+}

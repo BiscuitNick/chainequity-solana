@@ -222,12 +222,10 @@ class EventProcessor:
         try:
             token_config = base64.b64encode(data[0:32]).decode()
             wallet = base64.b64encode(data[32:64]).decode()
-            kyc_level = data[64] if len(data) > 64 else 1
 
             entry = AllowlistEntry(
                 token_config=token_config,
                 wallet_address=wallet,
-                kyc_level=kyc_level,
                 status="active",
                 added_at=tx.block_time or datetime.utcnow(),
                 added_tx=tx.signature,

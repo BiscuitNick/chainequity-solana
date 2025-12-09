@@ -32,7 +32,6 @@ async def get_allowlist(token_id: int = Path(...), db: AsyncSession = Depends(ge
         AllowlistEntryResponse(
             address=w.address,
             status=w.status,
-            kyc_level=w.kyc_level,
             added_at=w.created_at.isoformat() if w.created_at else None,
             approved_at=w.approved_at,
             approved_by=w.approved_by,
@@ -58,7 +57,6 @@ async def get_wallet_status(token_id: int = Path(...), address: str = Path(...),
     return AllowlistEntryResponse(
         address=wallet.address,
         status=wallet.status,
-        kyc_level=wallet.kyc_level,
         added_at=wallet.created_at.isoformat() if wallet.created_at else None,
         approved_at=wallet.approved_at,
         approved_by=wallet.approved_by,
@@ -97,7 +95,6 @@ async def add_wallet(request: AddWalletRequest, token_id: int = Path(...), db: A
     wallet = Wallet(
         token_id=token_id,
         address=request.address,
-        kyc_level=request.kyc_level,
         status="pending",
     )
     db.add(wallet)
@@ -108,7 +105,6 @@ async def add_wallet(request: AddWalletRequest, token_id: int = Path(...), db: A
         "message": "Wallet added to allowlist",
         "address": wallet.address,
         "status": wallet.status,
-        "kyc_level": wallet.kyc_level,
     }
 
 
@@ -143,7 +139,6 @@ async def approve_wallet(request: ApproveWalletRequest, token_id: int = Path(...
         wallet = Wallet(
             token_id=token_id,
             address=request.address,
-            kyc_level=request.kyc_level,
             status="active",
             approved_at=datetime.utcnow(),
         )
@@ -153,7 +148,6 @@ async def approve_wallet(request: ApproveWalletRequest, token_id: int = Path(...
     else:
         # Update existing wallet to active
         wallet.status = "active"
-        wallet.kyc_level = request.kyc_level
         wallet.approved_at = datetime.utcnow()
 
     await db.commit()
@@ -166,7 +160,6 @@ async def approve_wallet(request: ApproveWalletRequest, token_id: int = Path(...
         "message": "Wallet approved on allowlist",
         "address": wallet.address,
         "status": wallet.status,
-        "kyc_level": wallet.kyc_level,
     }
 
     try:
@@ -181,7 +174,6 @@ async def approve_wallet(request: ApproveWalletRequest, token_id: int = Path(...
             "data": {
                 "wallet": request.address,
                 "approved": True,
-                "kyc_level": request.kyc_level,
             }
         }
     except Exception:
@@ -246,7 +238,6 @@ async def revoke_wallet(request: ApproveWalletRequest, token_id: int = Path(...)
             "data": {
                 "wallet": request.address,
                 "approved": False,
-                "kyc_level": 0,
             }
         }
     except Exception:
@@ -291,14 +282,12 @@ async def bulk_approve(request: BulkApproveRequest, token_id: int = Path(...), d
                 wallet = Wallet(
                     token_id=token_id,
                     address=wallet_address,
-                    kyc_level=request.kyc_level,
                     status="active",
                     approved_at=datetime.utcnow(),
                 )
                 db.add(wallet)
             elif wallet.status != "active":
                 wallet.status = "active"
-                wallet.kyc_level = request.kyc_level
                 wallet.approved_at = datetime.utcnow()
 
             instructions.append({
@@ -306,7 +295,6 @@ async def bulk_approve(request: BulkApproveRequest, token_id: int = Path(...), d
                 "allowlist_pda": str(allowlist_pda),
                 "data": {
                     "approved": True,
-                    "kyc_level": request.kyc_level,
                 }
             })
         except Exception as e:

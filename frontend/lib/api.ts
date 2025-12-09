@@ -98,14 +98,14 @@ class ApiClient {
     return this.request<AllowlistEntry[]>(`/tokens/${tokenId}/allowlist?skip=${skip}&limit=${limit}`)
   }
 
-  async addToAllowlist(tokenId: number, data: { address: string; kyc_level: number }) {
+  async addToAllowlist(tokenId: number, data: { address: string }) {
     return this.request<any>(`/tokens/${tokenId}/allowlist`, {
       method: 'POST',
       body: JSON.stringify(data),
     })
   }
 
-  async approveWallet(tokenId: number, data: { address: string; kyc_level: number }) {
+  async approveWallet(tokenId: number, data: { address: string }) {
     return this.request<any>(`/tokens/${tokenId}/allowlist/approve`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -507,7 +507,6 @@ export interface TokenHolder {
 
 export interface AllowlistEntry {
   address: string
-  kyc_level: number
   status: 'pending' | 'active' | 'revoked'
   added_at?: string
   approved_at?: string

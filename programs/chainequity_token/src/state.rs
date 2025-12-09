@@ -17,8 +17,6 @@ pub struct AllowlistEntry {
     pub approved_by: Pubkey,
     /// Current status
     pub status: AllowlistStatus,
-    /// KYC tier (1-3)
-    pub kyc_level: u8,
     /// PDA bump
     pub bump: u8,
 }
@@ -30,7 +28,6 @@ impl AllowlistEntry {
         8 +  // approved_at
         32 + // approved_by
         1 +  // status enum
-        1 +  // kyc_level
         1;   // bump
 }
 

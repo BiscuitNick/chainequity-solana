@@ -15,14 +15,12 @@ interface BulkImportAllowlistModalProps {
 
 interface ImportEntry {
   address: string
-  kyc_level: number
   status: 'pending' | 'success' | 'error'
   error?: string
 }
 
 export function BulkImportAllowlistModal({ isOpen, onClose, onSuccess, tokenId }: BulkImportAllowlistModalProps) {
   const [rawInput, setRawInput] = useState('')
-  const [kycLevel, setKycLevel] = useState(1)
   const [autoApprove, setAutoApprove] = useState(false)
   const [entries, setEntries] = useState<ImportEntry[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
@@ -53,7 +51,6 @@ export function BulkImportAllowlistModal({ isOpen, onClose, onSuccess, tokenId }
 
     setEntries(addresses.map(address => ({
       address,
-      kyc_level: kycLevel,
       status: 'pending' as const
     })))
   }
@@ -72,15 +69,9 @@ export function BulkImportAllowlistModal({ isOpen, onClose, onSuccess, tokenId }
 
       try {
         if (autoApprove) {
-          await api.approveWallet(tokenId, {
-            address: entry.address,
-            kyc_level: entry.kyc_level
-          })
+          await api.approveWallet(tokenId, { address: entry.address })
         } else {
-          await api.addToAllowlist(tokenId, {
-            address: entry.address,
-            kyc_level: entry.kyc_level
-          })
+          await api.addToAllowlist(tokenId, { address: entry.address })
         }
         updatedEntries[i] = { ...entry, status: 'success' }
       } catch (err: any) {
@@ -151,37 +142,18 @@ export function BulkImportAllowlistModal({ isOpen, onClose, onSuccess, tokenId }
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">KYC Level for All</label>
-                  <select
-                    value={kycLevel}
-                    onChange={(e) => setKycLevel(parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border rounded-md bg-background"
-                    disabled={isProcessing}
-                  >
-                    <option value={1}>Tier 1 - Basic</option>
-                    <option value={2}>Tier 2 - Enhanced</option>
-                    <option value={3}>Tier 3 - Accredited</option>
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Options</label>
-                  <div className="flex items-center gap-2 h-[42px]">
-                    <input
-                      type="checkbox"
-                      id="bulkAutoApprove"
-                      checked={autoApprove}
-                      onChange={(e) => setAutoApprove(e.target.checked)}
-                      className="rounded"
-                      disabled={isProcessing}
-                    />
-                    <label htmlFor="bulkAutoApprove" className="text-sm">
-                      Auto-approve all
-                    </label>
-                  </div>
-                </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="bulkAutoApprove"
+                  checked={autoApprove}
+                  onChange={(e) => setAutoApprove(e.target.checked)}
+                  className="rounded"
+                  disabled={isProcessing}
+                />
+                <label htmlFor="bulkAutoApprove" className="text-sm">
+                  Auto-approve all wallets
+                </label>
               </div>
 
               {error && (
@@ -224,7 +196,6 @@ export function BulkImportAllowlistModal({ isOpen, onClose, onSuccess, tokenId }
                   <thead className="bg-muted sticky top-0">
                     <tr>
                       <th className="text-left p-2">Address</th>
-                      <th className="text-left p-2">KYC</th>
                       <th className="text-left p-2">Status</th>
                     </tr>
                   </thead>
@@ -234,7 +205,6 @@ export function BulkImportAllowlistModal({ isOpen, onClose, onSuccess, tokenId }
                         <td className="p-2 font-mono text-xs">
                           {entry.address.slice(0, 8)}...{entry.address.slice(-6)}
                         </td>
-                        <td className="p-2">Tier {entry.kyc_level}</td>
                         <td className="p-2">
                           {entry.status === 'pending' && (
                             <span className="text-muted-foreground">Pending</span>

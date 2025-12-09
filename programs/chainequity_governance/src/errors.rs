@@ -43,4 +43,7 @@ pub enum GovernanceError {
 
     #[msg("Proposal already executed")]
     AlreadyExecuted,
+
+    #[msg("Invalid token config")]
+    InvalidTokenConfig,
 }

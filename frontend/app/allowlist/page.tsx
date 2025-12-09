@@ -57,8 +57,7 @@ export default function AllowlistPage() {
     setActionLoading(entry.address)
     try {
       await api.approveWallet(selectedToken.tokenId, {
-        address: entry.address,
-        kyc_level: entry.kyc_level
+        address: entry.address
       })
       await fetchAllowlist()
     } catch (e: any) {
@@ -96,8 +95,8 @@ export default function AllowlistPage() {
   }
 
   const handleExportCSV = () => {
-    const headers = ['Address', 'KYC Level', 'Status', 'Added At']
-    const rows = allowlist.map(e => [e.address, e.kyc_level, e.status, e.added_at || ''])
+    const headers = ['Address', 'Status', 'Added At']
+    const rows = allowlist.map(e => [e.address, e.status, e.added_at || ''])
     const csv = [headers, ...rows].map(row => row.join(',')).join('\n')
 
     const blob = new Blob([csv], { type: 'text/csv' })
@@ -182,11 +181,11 @@ export default function AllowlistPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">KYC Tier 3</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Wallets</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {loading ? '...' : allowlist.filter(e => e.kyc_level === 3).length}
+              {loading ? '...' : allowlist.length}
             </div>
           </CardContent>
         </Card>
@@ -241,7 +240,6 @@ export default function AllowlistPage() {
                 <thead>
                   <tr className="border-b">
                     <th className="text-left py-3 px-4 font-medium">Wallet Address</th>
-                    <th className="text-left py-3 px-4 font-medium">KYC Level</th>
                     <th className="text-left py-3 px-4 font-medium">Status</th>
                     <th className="text-left py-3 px-4 font-medium">Added</th>
                     <th className="text-right py-3 px-4 font-medium">Actions</th>
@@ -252,11 +250,6 @@ export default function AllowlistPage() {
                     <tr key={idx} className="border-b hover:bg-muted/50">
                       <td className="py-3 px-4">
                         <span className="font-mono text-sm">{entry.address}</span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="px-2 py-1 bg-blue-500/10 text-blue-500 rounded text-xs">
-                          Tier {entry.kyc_level}
-                        </span>
                       </td>
                       <td className="py-3 px-4">
                         <span className={`px-2 py-1 rounded text-xs capitalize ${statusColors[entry.status]}`}>

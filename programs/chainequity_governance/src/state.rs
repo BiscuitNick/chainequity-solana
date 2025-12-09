@@ -93,30 +93,16 @@ impl Proposal {
         1;   // bump
 }
 
-/// Actions that can be proposed
+/// Actions that can be proposed via governance
+/// Limited to core corporate actions that benefit from shareholder voting
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub enum GovernanceAction {
-    // Allowlist management
-    AddToAllowlist { wallet: Pubkey },
-    RemoveFromAllowlist { wallet: Pubkey },
-
-    // Parameter changes
-    UpdateDailyTransferLimit { wallet: Pubkey, limit: u64 },
-    UpdateGlobalTransferLimit { limit: u64 },
-
-    // Admin changes
-    AddMultisigSigner { signer: Pubkey },
-    RemoveMultisigSigner { signer: Pubkey },
-    UpdateThreshold { new_threshold: u8 },
-
-    // Corporate actions
+    /// Initiate a stock split (e.g., 7-for-1)
     InitiateStockSplit { multiplier: u8 },
+    /// Change the token symbol
     UpdateSymbol { new_symbol: String },
-    InitiateDividend { token: Pubkey, amount: u64 },
-
-    // Emergency
-    PauseTransfers,
-    UnpauseTransfers,
+    /// Initiate a dividend distribution
+    InitiateDividend { payment_token: Pubkey, total_amount: u64 },
 }
 
 impl GovernanceAction {

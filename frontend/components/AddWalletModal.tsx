@@ -15,7 +15,6 @@ interface AddWalletModalProps {
 
 export function AddWalletModal({ isOpen, onClose, onSuccess, tokenId }: AddWalletModalProps) {
   const [address, setAddress] = useState('')
-  const [kycLevel, setKycLevel] = useState(1)
   const [autoApprove, setAutoApprove] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -42,15 +41,14 @@ export function AddWalletModal({ isOpen, onClose, onSuccess, tokenId }: AddWalle
     try {
       if (autoApprove) {
         // Add and approve in one step
-        await api.approveWallet(tokenId, { address, kyc_level: kycLevel })
+        await api.approveWallet(tokenId, { address })
       } else {
         // Just add with pending status
-        await api.addToAllowlist(tokenId, { address, kyc_level: kycLevel })
+        await api.addToAllowlist(tokenId, { address })
       }
 
       // Reset form
       setAddress('')
-      setKycLevel(1)
       setAutoApprove(false)
 
       onSuccess()
@@ -96,23 +94,6 @@ export function AddWalletModal({ isOpen, onClose, onSuccess, tokenId }: AddWalle
                 className="w-full px-3 py-2 border rounded-md bg-background font-mono text-sm"
                 disabled={isSubmitting}
               />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">KYC Level</label>
-              <select
-                value={kycLevel}
-                onChange={(e) => setKycLevel(parseInt(e.target.value))}
-                className="w-full px-3 py-2 border rounded-md bg-background"
-                disabled={isSubmitting}
-              >
-                <option value={1}>Tier 1 - Basic</option>
-                <option value={2}>Tier 2 - Enhanced</option>
-                <option value={3}>Tier 3 - Accredited</option>
-              </select>
-              <p className="text-xs text-muted-foreground">
-                Higher KYC levels may have fewer transfer restrictions
-              </p>
             </div>
 
             <div className="flex items-center gap-2">

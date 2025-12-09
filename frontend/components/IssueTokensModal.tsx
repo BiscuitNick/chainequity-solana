@@ -109,10 +109,6 @@ export function IssueTokensModal({ isOpen, onClose, onSuccess, tokenId, tokenSym
                   {wallet.status}
                 </span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">KYC Level:</span>
-                <span>Tier {wallet.kyc_level}</span>
-              </div>
             </div>
 
             {wallet.status !== 'active' && (

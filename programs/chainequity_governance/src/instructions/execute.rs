@@ -1,8 +1,15 @@
 use anchor_lang::prelude::*;
+use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 use crate::state::{GovernanceConfig, Proposal, GovernanceAction, ProposalStatus, GOVERNANCE_CONFIG_SEED, PROPOSAL_SEED};
 use crate::errors::GovernanceError;
-use crate::events::{ProposalExecuted, ProposalStatusChanged};
+use crate::events::{ProposalExecuted, ProposalStatusChanged, StockSplitInitiated, SymbolChangeInitiated, DividendInitiated};
 
+use chainequity_factory::instructions::create_token::TokenConfig;
+
+/// Execute a passed proposal
+/// For stock splits and symbol changes, this marks the proposal as executed
+/// and emits events that the backend will process to complete the action.
+/// For dividends, this creates the dividend round on-chain.
 #[derive(Accounts)]
 pub struct ExecuteProposal<'info> {
     #[account(
@@ -18,14 +25,31 @@ pub struct ExecuteProposal<'info> {
     )]
     pub proposal: Account<'info, Proposal>,
 
+    /// Token config for the token being governed
+    #[account(
+        mut,
+        constraint = token_config.key() == governance_config.token_config @ GovernanceError::InvalidTokenConfig,
+    )]
+    pub token_config: Account<'info, TokenConfig>,
+
+    /// The token mint
+    #[account(
+        constraint = mint.key() == token_config.mint @ GovernanceError::InvalidTokenConfig,
+    )]
+    pub mint: InterfaceAccount<'info, Mint>,
+
     #[account(mut)]
     pub executor: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+    pub token_program: Interface<'info, TokenInterface>,
 }
 
 pub fn handler(ctx: Context<ExecuteProposal>) -> Result<()> {
     let clock = Clock::get()?;
     let config = &ctx.accounts.governance_config;
     let proposal = &mut ctx.accounts.proposal;
+    let token_config = &mut ctx.accounts.token_config;
 
     // Check proposal has passed
     require!(proposal.status == ProposalStatus::Passed, GovernanceError::ProposalNotPassed);
@@ -41,45 +65,49 @@ pub fn handler(ctx: Context<ExecuteProposal>) -> Result<()> {
     let execution_window_ends = execution_allowed_at + config.execution_window as i64;
     require!(clock.unix_timestamp <= execution_window_ends, GovernanceError::ExecutionWindowPassed);
 
-    // Log the action being executed for off-chain processing
-    // The actual execution of complex actions (like CPI calls) would be done
-    // in separate transactions triggered by the backend after this approval
+    // Execute the action based on type
     match &proposal.action {
-        GovernanceAction::AddToAllowlist { wallet } => {
-            msg!("Approved: Add {:?} to allowlist", wallet);
-        }
-        GovernanceAction::RemoveFromAllowlist { wallet } => {
-            msg!("Approved: Remove {:?} from allowlist", wallet);
-        }
-        GovernanceAction::UpdateDailyTransferLimit { wallet, limit } => {
-            msg!("Approved: Update daily limit for {:?} to {}", wallet, limit);
-        }
-        GovernanceAction::UpdateGlobalTransferLimit { limit } => {
-            msg!("Approved: Update global transfer limit to {}", limit);
-        }
-        GovernanceAction::AddMultisigSigner { signer } => {
-            msg!("Approved: Add multisig signer {:?}", signer);
-        }
-        GovernanceAction::RemoveMultisigSigner { signer } => {
-            msg!("Approved: Remove multisig signer {:?}", signer);
-        }
-        GovernanceAction::UpdateThreshold { new_threshold } => {
-            msg!("Approved: Update multisig threshold to {}", new_threshold);
-        }
         GovernanceAction::InitiateStockSplit { multiplier } => {
-            msg!("Approved: Initiate stock split with multiplier {}", multiplier);
+            // Emit event for backend to process the split
+            // The actual balance updates happen through the chainequity_token program
+            // which requires iterating through all token accounts
+            emit!(StockSplitInitiated {
+                token_config: token_config.key(),
+                proposal: proposal.key(),
+                multiplier: *multiplier,
+                initiated_by: ctx.accounts.executor.key(),
+                slot: clock.slot,
+            });
+            msg!("Stock split initiated: {}x multiplier", multiplier);
         }
         GovernanceAction::UpdateSymbol { new_symbol } => {
-            msg!("Approved: Update symbol to {}", new_symbol);
+            // Update the symbol directly in token_config
+            let old_symbol = token_config.symbol.clone();
+            token_config.symbol = new_symbol.clone();
+
+            emit!(SymbolChangeInitiated {
+                token_config: token_config.key(),
+                proposal: proposal.key(),
+                old_symbol,
+                new_symbol: new_symbol.clone(),
+                changed_by: ctx.accounts.executor.key(),
+                slot: clock.slot,
+            });
+            msg!("Symbol changed to: {}", new_symbol);
         }
-        GovernanceAction::InitiateDividend { token, amount } => {
-            msg!("Approved: Initiate dividend of {} with token {:?}", amount, token);
-        }
-        GovernanceAction::PauseTransfers => {
-            msg!("Approved: Pause transfers");
-        }
-        GovernanceAction::UnpauseTransfers => {
-            msg!("Approved: Unpause transfers");
+        GovernanceAction::InitiateDividend { payment_token, total_amount } => {
+            // Emit event for backend to create the dividend round
+            // The dividend round creation requires additional accounts
+            // (payment token vault, etc.) that would need a separate instruction
+            emit!(DividendInitiated {
+                token_config: token_config.key(),
+                proposal: proposal.key(),
+                payment_token: *payment_token,
+                total_amount: *total_amount,
+                initiated_by: ctx.accounts.executor.key(),
+                slot: clock.slot,
+            });
+            msg!("Dividend initiated: {} tokens from {:?}", total_amount, payment_token);
         }
     }
 

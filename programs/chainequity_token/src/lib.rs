@@ -19,11 +19,8 @@ pub mod chainequity_token {
     // =========================================================================
 
     /// Add a wallet to the allowlist
-    pub fn add_to_allowlist(
-        ctx: Context<AddToAllowlist>,
-        kyc_level: u8,
-    ) -> Result<()> {
-        instructions::allowlist::add_handler(ctx, kyc_level)
+    pub fn add_to_allowlist(ctx: Context<AddToAllowlist>) -> Result<()> {
+        instructions::allowlist::add_handler(ctx)
     }
 
     /// Remove a wallet from the allowlist

@@ -14,7 +14,6 @@ class Wallet(Base):
     token_id = Column(Integer, ForeignKey("tokens.token_id"), nullable=False, index=True)
     address = Column(String(44), nullable=False, index=True)
     status = Column(String(20), nullable=False, default="pending")  # pending, active, revoked, suspended
-    kyc_level = Column(Integer, default=0)
     approved_at = Column(DateTime, nullable=True)
     approved_by = Column(String(44), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -62,7 +61,6 @@ class AllowlistEntry(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     token_config = Column(String(64), nullable=False, index=True)
     wallet_address = Column(String(64), nullable=False, index=True)
-    kyc_level = Column(Integer, default=1)
     status = Column(String(20), nullable=False, default="active")
     added_at = Column(DateTime, nullable=True)
     added_tx = Column(String(128), nullable=True)
