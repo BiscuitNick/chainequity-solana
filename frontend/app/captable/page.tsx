@@ -4,21 +4,15 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/useAppStore'
-import { Download, PieChart, RefreshCw, Copy, Check } from 'lucide-react'
+import { Download, PieChart, RefreshCw } from 'lucide-react'
 import { api, CapTableResponse, CapTableEntry } from '@/lib/api'
+import { WalletAddress } from '@/components/WalletAddress'
 
 export default function CapTablePage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
   const [capTable, setCapTable] = useState<CapTableResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [copiedWallet, setCopiedWallet] = useState<string | null>(null)
-
-  const copyToClipboard = async (wallet: string) => {
-    await navigator.clipboard.writeText(wallet)
-    setCopiedWallet(wallet)
-    setTimeout(() => setCopiedWallet(null), 2000)
-  }
 
   const fetchCapTable = async () => {
     if (!selectedToken) return
@@ -168,7 +162,7 @@ export default function CapTablePage() {
                 {holders.slice(0, 5).map((holder, idx) => (
                   <div key={idx}>
                     <div className="flex justify-between text-sm mb-1">
-                      <span className="font-mono text-xs">{holder.wallet.slice(0, 8)}...{holder.wallet.slice(-4)}</span>
+                      <WalletAddress address={holder.wallet} />
                       <span>{holder.ownership_pct.toFixed(2)}%</span>
                     </div>
                     <div className="w-full bg-muted rounded-full h-3">
@@ -262,20 +256,7 @@ export default function CapTablePage() {
                     return (
                     <tr key={idx} className="border-b hover:bg-muted/50">
                       <td className="py-3 px-4">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm">{holder.wallet}</span>
-                          <button
-                            onClick={() => copyToClipboard(holder.wallet)}
-                            className="p-1 hover:bg-muted rounded transition-colors"
-                            title="Copy wallet address"
-                          >
-                            {copiedWallet === holder.wallet ? (
-                              <Check className="h-3.5 w-3.5 text-green-500" />
-                            ) : (
-                              <Copy className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
-                            )}
-                          </button>
-                        </div>
+                        <WalletAddress address={holder.wallet} />
                       </td>
                       <td className="py-3 px-4 text-right font-medium">{holder.balance.toLocaleString()}</td>
                       <td className="py-3 px-4 text-right">{holder.ownership_pct.toFixed(4)}%</td>

@@ -10,12 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useAppStore } from '@/stores/useAppStore'
 import { Plus, DollarSign, RefreshCw, AlertCircle, Coins, CheckCircle, Clock, XCircle, Send } from 'lucide-react'
 import { api, DividendRound, DividendPayment } from '@/lib/api'
-
-// Helper to truncate addresses
-const truncateAddress = (addr: string) => {
-  if (!addr || addr.length < 12) return addr
-  return `${addr.slice(0, 4)}...${addr.slice(-4)}`
-}
+import { WalletAddress } from '@/components/WalletAddress'
 
 // Helper to format dates nicely
 const formatDate = (dateStr: string | null | undefined) => {
@@ -289,7 +284,11 @@ export default function DividendsPage() {
             <div className="text-2xl font-bold">
               ${loading ? '...' : dividendRounds[0]?.amount_per_share?.toFixed(4) ?? '—'}
             </div>
-            <p className="text-xs text-muted-foreground">{dividendRounds[0] ? truncateAddress(dividendRounds[0].payment_token) : '—'}</p>
+            <p className="text-xs text-muted-foreground">
+              {dividendRounds[0] ? (
+                <WalletAddress address={dividendRounds[0].payment_token} />
+              ) : '—'}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -421,8 +420,8 @@ export default function DividendsPage() {
                       <tbody>
                         {roundPayments.map((payment) => (
                           <tr key={payment.id} className="border-b hover:bg-muted/50">
-                            <td className="py-2 px-2 font-mono text-xs truncate" title={payment.wallet}>
-                              {truncateAddress(payment.wallet)}
+                            <td className="py-2 px-2">
+                              <WalletAddress address={payment.wallet} />
                             </td>
                             <td className="py-2 px-2 text-right text-muted-foreground text-xs">
                               ${payment.dividend_per_share?.toFixed(4) || '—'}

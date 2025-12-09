@@ -4,18 +4,16 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/useAppStore'
-import { UserPlus, UserMinus, UserCheck, Search, Download, Upload, RefreshCw, Coins } from 'lucide-react'
+import { UserPlus, UserMinus, UserCheck, Search, Download, Upload, RefreshCw } from 'lucide-react'
 import { api, AllowlistEntry } from '@/lib/api'
 import { AddWalletModal } from '@/components/AddWalletModal'
-import { IssueTokensModal } from '@/components/IssueTokensModal'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { WalletAddress } from '@/components/WalletAddress'
 
 export default function AllowlistPage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
   const [searchTerm, setSearchTerm] = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
-  const [showIssueModal, setShowIssueModal] = useState(false)
-  const [selectedWallet, setSelectedWallet] = useState<AllowlistEntry | null>(null)
   const [walletToRevoke, setWalletToRevoke] = useState<AllowlistEntry | null>(null)
   const [allowlist, setAllowlist] = useState<AllowlistEntry[]>([])
   const [loading, setLoading] = useState(false)
@@ -87,11 +85,6 @@ export default function AllowlistPage() {
     } finally {
       setActionLoading(null)
     }
-  }
-
-  const handleIssueTokens = (entry: AllowlistEntry) => {
-    setSelectedWallet(entry)
-    setShowIssueModal(true)
   }
 
   const handleExportCSV = () => {
@@ -249,7 +242,7 @@ export default function AllowlistPage() {
                   {filteredEntries.map((entry, idx) => (
                     <tr key={idx} className="border-b hover:bg-muted/50">
                       <td className="py-3 px-4">
-                        <span className="font-mono text-sm">{entry.address}</span>
+                        <WalletAddress address={entry.address} />
                       </td>
                       <td className="py-3 px-4">
                         <span className={`px-2 py-1 rounded text-xs capitalize ${statusColors[entry.status]}`}>
@@ -274,28 +267,16 @@ export default function AllowlistPage() {
                             </Button>
                           )}
                           {entry.status === 'active' && (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-primary hover:text-primary/80"
-                                onClick={() => handleIssueTokens(entry)}
-                                disabled={actionLoading === entry.address}
-                                title="Issue tokens"
-                              >
-                                <Coins className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-red-500 hover:text-red-600"
-                                onClick={() => handleRevoke(entry)}
-                                disabled={actionLoading === entry.address}
-                                title="Revoke wallet"
-                              >
-                                <UserMinus className="h-4 w-4" />
-                              </Button>
-                            </>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-500 hover:text-red-600"
+                              onClick={() => handleRevoke(entry)}
+                              disabled={actionLoading === entry.address}
+                              title="Revoke wallet"
+                            >
+                              <UserMinus className="h-4 w-4" />
+                            </Button>
                           )}
                           {entry.status === 'revoked' && (
                             <Button
@@ -329,19 +310,6 @@ export default function AllowlistPage() {
         onClose={() => setShowAddModal(false)}
         onSuccess={fetchAllowlist}
         tokenId={selectedToken.tokenId}
-      />
-
-      {/* Issue Tokens Modal */}
-      <IssueTokensModal
-        isOpen={showIssueModal}
-        onClose={() => {
-          setShowIssueModal(false)
-          setSelectedWallet(null)
-        }}
-        onSuccess={fetchAllowlist}
-        tokenId={selectedToken.tokenId}
-        tokenSymbol={selectedToken.symbol}
-        wallet={selectedWallet}
       />
 
       {/* Revoke Confirmation Dialog */}

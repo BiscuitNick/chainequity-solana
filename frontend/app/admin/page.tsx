@@ -8,6 +8,7 @@ import { Shield, Users, Key, RefreshCw } from 'lucide-react'
 import { api, MultiSigConfigResponse, PendingTransactionResponse } from '@/lib/api'
 import { BulkImportAllowlistModal } from '@/components/BulkImportAllowlistModal'
 import { UpdateMultiSigThresholdModal } from '@/components/UpdateMultiSigThresholdModal'
+import { WalletAddress } from '@/components/WalletAddress'
 
 export default function AdminPage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
@@ -159,7 +160,7 @@ export default function AdminPage() {
                 <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
                   <div className="flex items-center gap-3">
                     <div className="w-2 h-2 rounded-full bg-green-500" />
-                    <p className="font-mono text-sm">{signer}</p>
+                    <WalletAddress address={signer} />
                   </div>
                   <Button variant="ghost" size="sm" className="text-red-500">
                     Remove

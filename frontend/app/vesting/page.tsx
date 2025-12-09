@@ -7,6 +7,7 @@ import { useAppStore } from '@/stores/useAppStore'
 import { Plus, Calendar, Clock, AlertTriangle, RefreshCw, Check, X } from 'lucide-react'
 import { api, VestingSchedule, TerminateVestingRequest } from '@/lib/api'
 import { CreateVestingScheduleModal } from '@/components/CreateVestingScheduleModal'
+import { WalletAddress } from '@/components/WalletAddress'
 
 type TerminationType = 'standard' | 'for_cause' | 'accelerated'
 
@@ -280,7 +281,7 @@ export default function VestingPage() {
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono text-sm">{schedule.beneficiary}</span>
+                        <WalletAddress address={schedule.beneficiary} />
                         <span className={`px-2 py-0.5 rounded text-xs capitalize ${statusColors[getStatus(schedule)]}`}>
                           {getStatus(schedule)}
                         </span>

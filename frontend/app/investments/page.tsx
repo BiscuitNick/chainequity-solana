@@ -8,8 +8,6 @@ import { Label } from '@/components/ui/label'
 import { useAppStore } from '@/stores/useAppStore'
 import {
   DollarSign,
-  TrendingUp,
-  TrendingDown,
   PieChart,
   Calculator,
   RefreshCw,
@@ -23,6 +21,7 @@ import {
   Check,
   Ban,
   Trash2,
+  TrendingDown,
 } from 'lucide-react'
 import {
   api,
@@ -38,6 +37,7 @@ import {
   SafeType,
 } from '@/lib/api'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { WalletAddress } from '@/components/WalletAddress'
 
 // Helper to format cents as dollars
 const formatDollars = (cents: number) => {
@@ -401,10 +401,7 @@ export default function InvestmentsPage() {
   const currentValuation = enhancedCapTable?.current_valuation || 0
   const totalShares = enhancedCapTable?.total_shares || 0
   const totalCostBasis = enhancedCapTable?.total_cost_basis || 0
-  const totalCurrentValue = enhancedCapTable?.total_current_value || 0
   const pricePerShare = enhancedCapTable?.price_per_share || 0
-  const totalGain = totalCurrentValue - totalCostBasis
-  const gainPercent = totalCostBasis > 0 ? ((totalGain / totalCostBasis) * 100) : 0
 
   return (
     <div className="space-y-6">
@@ -430,7 +427,7 @@ export default function InvestmentsPage() {
       )}
 
       {/* Valuation Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -473,27 +470,6 @@ export default function InvestmentsPage() {
               {loading ? '...' : formatDollars(totalCostBasis)}
             </div>
             <p className="text-xs text-muted-foreground">cost basis</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              {totalGain >= 0 ? (
-                <TrendingUp className="h-4 w-4 text-green-500" />
-              ) : (
-                <TrendingDown className="h-4 w-4 text-red-500" />
-              )}
-              Unrealized Gain
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold ${totalGain >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-              {loading ? '...' : `${totalGain >= 0 ? '+' : ''}${formatDollars(totalGain)}`}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {gainPercent >= 0 ? '+' : ''}{gainPercent.toFixed(1)}% return
-            </p>
           </CardContent>
         </Card>
       </div>
@@ -841,8 +817,8 @@ export default function InvestmentsPage() {
                         </div>
                         <div className="space-y-2">
                           {tier.payouts.map((payout, idx) => (
-                            <div key={idx} className="flex justify-between text-sm">
-                              <span className="font-mono">{payout.wallet.slice(0, 8)}...{payout.wallet.slice(-4)}</span>
+                            <div key={idx} className="flex justify-between text-sm items-center">
+                              <WalletAddress address={payout.wallet} />
                               <span className="text-muted-foreground">{payout.share_class_name}</span>
                               <span className="font-medium">{formatDollars(payout.payout)}</span>
                             </div>
@@ -962,8 +938,8 @@ export default function InvestmentsPage() {
                         <tbody>
                           {dilutionResult.existing_holders.map((holder, idx) => (
                             <tr key={idx} className="border-b hover:bg-muted/50">
-                              <td className="py-2 px-3 font-mono text-sm">
-                                {holder.wallet.slice(0, 8)}...{holder.wallet.slice(-4)}
+                              <td className="py-2 px-3">
+                                <WalletAddress address={holder.wallet} />
                               </td>
                               <td className="py-2 px-3 text-right">{holder.ownership_before.toFixed(2)}%</td>
                               <td className="py-2 px-3 text-right">{holder.ownership_after.toFixed(2)}%</td>
@@ -1333,10 +1309,10 @@ export default function InvestmentsPage() {
                     {selectedRound.investments.map((inv) => (
                       <div key={inv.id} className="flex items-center justify-between p-3 border rounded">
                         <div>
-                          <p className="font-medium font-mono text-sm">
-                            {inv.investor_wallet.slice(0, 8)}...{inv.investor_wallet.slice(-4)}
-                            {inv.investor_name && <span className="font-sans ml-2">({inv.investor_name})</span>}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <WalletAddress address={inv.investor_wallet} />
+                            {inv.investor_name && <span className="text-sm">({inv.investor_name})</span>}
+                          </div>
                           <p className="text-xs text-muted-foreground">
                             {formatDollars(inv.amount)} → {inv.shares_received.toLocaleString()} shares
                           </p>

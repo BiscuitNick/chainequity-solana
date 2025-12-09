@@ -20,8 +20,6 @@ import {
   Layers,
   Users,
   DollarSign,
-  Check,
-  Copy,
   Trash2,
 } from 'lucide-react'
 import {
@@ -31,29 +29,30 @@ import {
   IssueSharesRequest,
   CreateShareClassRequest,
 } from '@/lib/api'
+import { WalletAddress } from '@/components/WalletAddress'
 
 // Prepopulated share class templates
 // Priority: Lower number = higher priority in liquidation waterfall
 // Preference Multiple: 1 = 1x liquidation preference, 2 = 2x, etc.
 const SHARE_CLASS_TEMPLATES: CreateShareClassRequest[] = [
   // Common stock - lowest priority, default for vested shares
-  { name: 'Common', symbol: 'CM', priority: 90, preference_multiple: 1 },
+  { name: 'Common', symbol: 'COM', priority: 90, preference_multiple: 1 },
   // Seed rounds
-  { name: 'Seed', symbol: 'SD1', priority: 80, preference_multiple: 1 },
-  { name: 'Seed', symbol: 'SD2', priority: 80, preference_multiple: 2 },
-  { name: 'Seed', symbol: 'SD3', priority: 80, preference_multiple: 3 },
+  { name: 'Seed', symbol: 'S1x', priority: 80, preference_multiple: 1 },
+  { name: 'Seed', symbol: 'S2x', priority: 80, preference_multiple: 2 },
+  { name: 'Seed', symbol: 'S3x', priority: 80, preference_multiple: 3 },
   // Series A
-  { name: 'Series A', symbol: 'A1', priority: 70, preference_multiple: 1 },
-  { name: 'Series A', symbol: 'A2', priority: 70, preference_multiple: 2 },
-  { name: 'Series A', symbol: 'A3', priority: 70, preference_multiple: 3 },
+  { name: 'Series A', symbol: 'A1x', priority: 70, preference_multiple: 1 },
+  { name: 'Series A', symbol: 'A2x', priority: 70, preference_multiple: 2 },
+  { name: 'Series A', symbol: 'A3x', priority: 70, preference_multiple: 3 },
   // Series B
-  { name: 'Series B', symbol: 'B1', priority: 60, preference_multiple: 1 },
-  { name: 'Series B', symbol: 'B2', priority: 60, preference_multiple: 2 },
-  { name: 'Series B', symbol: 'B3', priority: 60, preference_multiple: 3 },
+  { name: 'Series B', symbol: 'B1x', priority: 60, preference_multiple: 1 },
+  { name: 'Series B', symbol: 'B2x', priority: 60, preference_multiple: 2 },
+  { name: 'Series B', symbol: 'B3x', priority: 60, preference_multiple: 3 },
   // Series C
-  { name: 'Series C', symbol: 'C1', priority: 50, preference_multiple: 1 },
-  { name: 'Series C', symbol: 'C2', priority: 50, preference_multiple: 2 },
-  { name: 'Series C', symbol: 'C3', priority: 50, preference_multiple: 3 },
+  { name: 'Series C', symbol: 'C1x', priority: 50, preference_multiple: 1 },
+  { name: 'Series C', symbol: 'C2x', priority: 50, preference_multiple: 2 },
+  { name: 'Series C', symbol: 'C3x', priority: 50, preference_multiple: 3 },
 ]
 
 // Default share class - vested shares convert to this
@@ -95,15 +94,8 @@ export default function IssuancePage() {
   const [classPreference, setClassPreference] = useState('1.0')
   const [creatingClass, setCreatingClass] = useState(false)
 
-  const [copiedWallet, setCopiedWallet] = useState<string | null>(null)
   const [initializingClasses, setInitializingClasses] = useState(false)
   const [deletingClassId, setDeletingClassId] = useState<number | null>(null)
-
-  const copyToClipboard = async (wallet: string) => {
-    await navigator.clipboard.writeText(wallet)
-    setCopiedWallet(wallet)
-    setTimeout(() => setCopiedWallet(null), 2000)
-  }
 
   const fetchData = async () => {
     if (!selectedToken) return
@@ -404,11 +396,13 @@ export default function IssuancePage() {
                       <SelectValue placeholder="Select a share class" />
                     </SelectTrigger>
                     <SelectContent>
-                      {shareClasses.map((sc) => (
-                        <SelectItem key={sc.id} value={sc.id.toString()}>
-                          {sc.name} ({sc.symbol}) - {sc.preference_multiple}x preference
-                        </SelectItem>
-                      ))}
+                      {[...shareClasses]
+                        .sort((a, b) => b.priority - a.priority)
+                        .map((sc) => (
+                          <SelectItem key={sc.id} value={sc.id.toString()}>
+                            {sc.name} ({sc.symbol}) - {sc.preference_multiple}x preference
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                   {selectedClass && (
@@ -731,21 +725,7 @@ export default function IssuancePage() {
                     return (
                       <tr key={idx} className="border-b hover:bg-muted/50">
                         <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-sm">
-                              {position.wallet.slice(0, 8)}...{position.wallet.slice(-4)}
-                            </span>
-                            <button
-                              onClick={() => copyToClipboard(position.wallet)}
-                              className="p-1 hover:bg-muted rounded transition-colors"
-                            >
-                              {copiedWallet === position.wallet ? (
-                                <Check className="h-3.5 w-3.5 text-green-500" />
-                              ) : (
-                                <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                              )}
-                            </button>
-                          </div>
+                          <WalletAddress address={position.wallet} />
                         </td>
                         <td className="py-3 px-4">
                           <span className={`px-2 py-1 rounded text-xs ${

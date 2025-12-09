@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAppStore } from '@/stores/useAppStore'
-import { Copy, Check } from 'lucide-react'
 import api, { CapTableResponse, Proposal, Transfer, TransferStatsResponse, IssuanceStatsResponse, TokenIssuance } from '@/lib/api'
+import { WalletAddress } from '@/components/WalletAddress'
 
 // Combined activity type for displaying both transfers and issuances
 type Activity = {
@@ -26,13 +26,6 @@ export default function DashboardPage() {
   const [issuanceStats, setIssuanceStats] = useState<IssuanceStatsResponse | null>(null)
   const [recentActivity, setRecentActivity] = useState<Activity[]>([])
   const [loading, setLoading] = useState(false)
-  const [copiedSlot, setCopiedSlot] = useState<number | null>(null)
-
-  const copySlotToClipboard = async (slot: number) => {
-    await navigator.clipboard.writeText(slot.toString())
-    setCopiedSlot(slot)
-    setTimeout(() => setCopiedSlot(null), 2000)
-  }
 
   useEffect(() => {
     if (selectedToken?.tokenId === undefined || selectedToken?.tokenId === null) return
@@ -176,9 +169,7 @@ export default function DashboardPage() {
                         className="w-3 h-3 rounded-full"
                         style={{ backgroundColor: `hsl(${idx * 60}, 70%, 50%)` }}
                       />
-                      <span className="text-sm font-mono truncate max-w-[180px]">
-                        {holder.wallet.slice(0, 4)}...{holder.wallet.slice(-4)}
-                      </span>
+                      <WalletAddress address={holder.wallet} />
                     </div>
                     <div className="text-right">
                       <div className="text-sm font-medium">{holder.ownership_pct.toFixed(2)}%</div>
@@ -226,7 +217,7 @@ export default function DashboardPage() {
                           {activity.type === 'issuance' ? 'MINT' : 'TRANSFER'}
                         </span>
                         <span className="font-mono text-xs">
-                          {activity.from === 'MINT' ? 'MINT' : `${activity.from.slice(0, 4)}...${activity.from.slice(-4)}`} → {activity.to.slice(0, 4)}...{activity.to.slice(-4)}
+                          {activity.from === 'MINT' ? 'MINT' : <WalletAddress address={activity.from} />} → <WalletAddress address={activity.to} />
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -234,19 +225,8 @@ export default function DashboardPage() {
                           {new Date(activity.timestamp).toLocaleString()}
                         </span>
                         {activity.slot !== undefined && activity.slot !== null && (
-                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <span>Slot #{activity.slot.toLocaleString()}</span>
-                            <button
-                              onClick={() => copySlotToClipboard(activity.slot!)}
-                              className="p-0.5 hover:bg-muted rounded transition-colors"
-                              title="Copy slot number"
-                            >
-                              {copiedSlot === activity.slot ? (
-                                <Check className="h-3 w-3 text-green-500" />
-                              ) : (
-                                <Copy className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                              )}
-                            </button>
+                          <span className="text-xs text-muted-foreground">
+                            Slot #{activity.slot.toLocaleString()}
                           </span>
                         )}
                       </div>

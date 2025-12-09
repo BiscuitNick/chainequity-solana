@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 export interface Token {
   tokenId: number
@@ -25,18 +26,26 @@ interface AppState {
   setError: (error: string | null) => void
 }
 
-export const useAppStore = create<AppState>((set) => ({
-  // Token selection
-  tokens: [],
-  selectedToken: null,
-  setTokens: (tokens) => set({ tokens }),
-  setSelectedToken: (token) => set({ selectedToken: token }),
+export const useAppStore = create<AppState>()(
+  persist(
+    (set) => ({
+      // Token selection
+      tokens: [],
+      selectedToken: null,
+      setTokens: (tokens) => set({ tokens }),
+      setSelectedToken: (token) => set({ selectedToken: token }),
 
-  // Loading states
-  isLoading: false,
-  setIsLoading: (isLoading) => set({ isLoading }),
+      // Loading states
+      isLoading: false,
+      setIsLoading: (isLoading) => set({ isLoading }),
 
-  // Error handling
-  error: null,
-  setError: (error) => set({ error }),
-}))
+      // Error handling
+      error: null,
+      setError: (error) => set({ error }),
+    }),
+    {
+      name: 'chainequity-app-storage',
+      partialize: (state) => ({ selectedToken: state.selectedToken }),
+    }
+  )
+)
