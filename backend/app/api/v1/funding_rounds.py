@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from app.models.database import get_db
@@ -109,8 +109,24 @@ async def create_funding_round(
     if request.pre_money_valuation <= 0:
         raise HTTPException(status_code=400, detail="Pre-money valuation must be positive")
 
-    # Calculate price per share based on current fully diluted shares
-    fully_diluted_shares = token.total_supply or 1
+    # Calculate fully diluted shares from actual share positions (not token.total_supply which may be stale)
+    result = await db.execute(
+        select(func.coalesce(func.sum(SharePosition.shares), 0))
+        .where(SharePosition.token_id == token_id)
+    )
+    fully_diluted_shares = result.scalar() or 0
+
+    # Also check CurrentBalance for on-chain shares
+    result = await db.execute(
+        select(func.coalesce(func.sum(CurrentBalance.balance), 0))
+        .where(CurrentBalance.token_id == token_id)
+    )
+    onchain_shares = result.scalar() or 0
+
+    # Use the maximum of the two (they should ideally match, but use max for safety)
+    fully_diluted_shares = max(fully_diluted_shares, onchain_shares, 1)
+
+    # Calculate price per share
     price_per_share = request.pre_money_valuation // fully_diluted_shares
 
     if price_per_share <= 0:
