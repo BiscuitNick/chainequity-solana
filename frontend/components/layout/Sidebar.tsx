@@ -13,13 +13,17 @@ import {
   Vote,
   Building2,
   Settings,
+  TrendingUp,
+  CircleDollarSign,
 } from 'lucide-react'
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Allowlist', href: '/allowlist', icon: Users },
   { name: 'Tokens', href: '/tokens', icon: Coins },
+  { name: 'Share Issuance', href: '/issuance', icon: CircleDollarSign },
   { name: 'Cap Table', href: '/captable', icon: PieChart },
+  { name: 'Investments', href: '/investments', icon: TrendingUp },
   { name: 'Vesting', href: '/vesting', icon: Calendar },
   { name: 'Dividends', href: '/dividends', icon: Wallet },
   { name: 'Governance', href: '/governance', icon: Vote },

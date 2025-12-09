@@ -211,12 +211,12 @@ export function useVote(tokenId: number | null) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const vote = async (proposalId: number, voteFor: boolean) => {
+  const vote = async (proposalId: number, voteChoice: 'for' | 'against' | 'abstain') => {
     if (tokenId === null || tokenId === undefined) return null
     setLoading(true)
     setError(null)
     try {
-      const result = await api.vote(tokenId, proposalId, voteFor)
+      const result = await api.vote(tokenId, proposalId, voteChoice)
       return result
     } catch (e: any) {
       setError(e.detail || e.message || 'Failed to vote')

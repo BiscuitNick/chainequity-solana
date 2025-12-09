@@ -19,7 +19,13 @@ from app.schemas.captable import (
     CapTableEntryResponse,
     ExportFormat,
     SnapshotResponse,
+    EnhancedCapTableResponse,
+    EnhancedCapTableEntry,
+    EnhancedCapTableByWalletResponse,
+    ShareClassSummary,
+    WalletSummary,
 )
+from app.models.share_class import ShareClass, SharePosition
 from app.services.solana_client import get_solana_client
 
 router = APIRouter()
@@ -114,7 +120,7 @@ async def _build_captable(
         solana_client = await get_solana_client()
         current_slot = await solana_client.get_slot()
 
-        # Get all current balances
+        # Get all current balances (on-chain)
         result = await db.execute(
             select(CurrentBalance)
             .where(CurrentBalance.token_id == token_id)
@@ -122,6 +128,14 @@ async def _build_captable(
             .order_by(CurrentBalance.balance.desc())
         )
         balances = result.scalars().all()
+
+        # Get all share positions (off-chain issuances)
+        result = await db.execute(
+            select(SharePosition)
+            .where(SharePosition.token_id == token_id)
+            .where(SharePosition.shares > 0)
+        )
+        share_positions = result.scalars().all()
 
         # Get vesting info for each holder and auto-release vested tokens
         vesting_map = {}
@@ -167,21 +181,35 @@ async def _build_captable(
         for w in wallets:
             wallet_map[w.address] = w
 
-        # Calculate total supply
-        total_supply = sum(b.balance for b in balances)
+        # Merge on-chain balances with off-chain share positions
+        # Create a combined map: wallet -> total balance
+        combined_balances = {}
+
+        # Add on-chain balances
+        for b in balances:
+            if b.wallet not in combined_balances:
+                combined_balances[b.wallet] = 0
+            combined_balances[b.wallet] += b.balance
+
+        # Add off-chain share positions
+        for sp in share_positions:
+            if sp.wallet not in combined_balances:
+                combined_balances[sp.wallet] = 0
+            combined_balances[sp.wallet] += sp.shares
+
+        # Calculate total supply (combined)
+        total_supply = sum(combined_balances.values())
 
         # Build holders list
         holders = []
-        for b in balances:
-            wallet = wallet_map.get(b.wallet)
-            vesting = vesting_map.get(b.wallet, {"vested": 0, "unvested": 0})
-            ownership_pct = (b.balance / total_supply * 100) if total_supply > 0 else 0
+        for wallet_addr, balance in combined_balances.items():
+            wallet = wallet_map.get(wallet_addr)
+            vesting = vesting_map.get(wallet_addr, {"vested": 0, "unvested": 0})
+            ownership_pct = (balance / total_supply * 100) if total_supply > 0 else 0
 
-            # Note: wallet.restrictions requires eager loading for async context
-            # For now, skip restrictions to avoid MissingGreenlet error
             holders.append(CapTableEntryResponse(
-                wallet=b.wallet,
-                balance=b.balance,
+                wallet=wallet_addr,
+                balance=balance,
                 ownership_pct=round(ownership_pct, 4),
                 vested=vesting["vested"],
                 unvested=vesting["unvested"],
@@ -189,6 +217,9 @@ async def _build_captable(
                 daily_limit=None,    # TODO: eager load restrictions
                 status=wallet.status if wallet else "active",
             ))
+
+        # Sort by balance descending
+        holders.sort(key=lambda x: x.balance, reverse=True)
 
         return CapTableResponse(
             slot=current_slot,
@@ -330,3 +361,257 @@ async def export_captable(
         )
 
     raise HTTPException(status_code=400, detail=f"Unsupported format: {format}")
+
+
+@router.get("/enhanced", response_model=EnhancedCapTableResponse)
+async def get_enhanced_captable(
+    token_id: int = Path(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get enhanced cap table with dollar values and share class breakdown.
+
+    This endpoint provides:
+    - Current valuation and price per share
+    - Total cost basis (amount invested)
+    - Current value at today's valuation
+    - Unrealized gains/losses
+    - Share class breakdown with priorities and preference multiples
+    - Individual positions with full investment details
+    """
+    # Get token info with valuation
+    result = await db.execute(
+        select(Token).where(Token.token_id == token_id)
+    )
+    token = result.scalar_one_or_none()
+    if not token:
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    current_valuation = token.current_valuation or 0
+    if current_valuation <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Token has no current valuation. Set a valuation first using POST /valuations."
+        )
+
+    # Get current slot
+    solana_client = await get_solana_client()
+    current_slot = await solana_client.get_slot()
+
+    # Get all share classes for this token
+    result = await db.execute(
+        select(ShareClass)
+        .where(ShareClass.token_id == token_id)
+        .order_by(ShareClass.priority)
+    )
+    share_classes = result.scalars().all()
+
+    if not share_classes:
+        raise HTTPException(
+            status_code=400,
+            detail="No share classes found. Create share classes first."
+        )
+
+    # Get all share positions
+    result = await db.execute(
+        select(SharePosition)
+        .where(SharePosition.token_id == token_id)
+        .where(SharePosition.shares > 0)
+    )
+    positions = result.scalars().all()
+
+    # Calculate totals
+    total_shares = sum(p.shares for p in positions)
+    total_cost_basis = sum(p.cost_basis for p in positions)
+    price_per_share = current_valuation // total_shares if total_shares > 0 else 0
+    total_current_value = total_shares * price_per_share
+
+    # Build share class map for lookup
+    share_class_map = {sc.id: sc for sc in share_classes}
+
+    # Build share class summaries
+    class_summaries = []
+    for sc in share_classes:
+        class_positions = [p for p in positions if p.share_class_id == sc.id]
+        class_shares = sum(p.shares for p in class_positions)
+        class_value = class_shares * price_per_share
+        class_summaries.append(ShareClassSummary(
+            id=sc.id,
+            name=sc.name,
+            symbol=sc.symbol,
+            priority=sc.priority,
+            preference_multiple=sc.preference_multiple,
+            total_shares=class_shares,
+            total_value=class_value,
+            holder_count=len(set(p.wallet for p in class_positions)),
+        ))
+
+    # Calculate shares per class for class ownership calculation
+    shares_per_class = {}
+    for p in positions:
+        if p.share_class_id not in shares_per_class:
+            shares_per_class[p.share_class_id] = 0
+        shares_per_class[p.share_class_id] += p.shares
+
+    # Build position entries
+    position_entries = []
+    unique_wallets = set()
+    for p in positions:
+        sc = share_class_map.get(p.share_class_id)
+        if not sc:
+            continue
+
+        unique_wallets.add(p.wallet)
+        current_value = p.shares * price_per_share
+        class_shares = shares_per_class.get(p.share_class_id, 1)
+
+        position_entries.append(EnhancedCapTableEntry(
+            wallet=p.wallet,
+            share_class_id=sc.id,
+            share_class_name=sc.name,
+            share_class_symbol=sc.symbol,
+            shares=p.shares,
+            cost_basis=p.cost_basis,
+            current_value=current_value,
+            ownership_pct=round((p.shares / total_shares * 100), 4) if total_shares > 0 else 0,
+            class_ownership_pct=round((p.shares / class_shares * 100), 4) if class_shares > 0 else 0,
+            unrealized_gain=current_value - p.cost_basis,
+            price_per_share=price_per_share,
+            preference_amount=int(p.cost_basis * sc.preference_multiple),
+        ))
+
+    # Sort by ownership descending
+    position_entries.sort(key=lambda x: x.shares, reverse=True)
+
+    return EnhancedCapTableResponse(
+        slot=current_slot,
+        timestamp=datetime.utcnow(),
+        current_valuation=current_valuation,
+        price_per_share=price_per_share,
+        last_valuation_date=token.last_valuation_date,
+        total_shares=total_shares,
+        total_cost_basis=total_cost_basis,
+        total_current_value=total_current_value,
+        holder_count=len(unique_wallets),
+        share_classes=class_summaries,
+        positions=position_entries,
+    )
+
+
+@router.get("/enhanced/by-wallet", response_model=EnhancedCapTableByWalletResponse)
+async def get_enhanced_captable_by_wallet(
+    token_id: int = Path(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get enhanced cap table grouped by wallet.
+
+    Each wallet shows all their positions across different share classes
+    with aggregated totals.
+    """
+    # Get token info with valuation
+    result = await db.execute(
+        select(Token).where(Token.token_id == token_id)
+    )
+    token = result.scalar_one_or_none()
+    if not token:
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    current_valuation = token.current_valuation or 0
+    if current_valuation <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Token has no current valuation. Set a valuation first using POST /valuations."
+        )
+
+    # Get current slot
+    solana_client = await get_solana_client()
+    current_slot = await solana_client.get_slot()
+
+    # Get all share classes for this token
+    result = await db.execute(
+        select(ShareClass).where(ShareClass.token_id == token_id)
+    )
+    share_classes = result.scalars().all()
+    share_class_map = {sc.id: sc for sc in share_classes}
+
+    # Get all share positions
+    result = await db.execute(
+        select(SharePosition)
+        .where(SharePosition.token_id == token_id)
+        .where(SharePosition.shares > 0)
+    )
+    positions = result.scalars().all()
+
+    # Calculate totals
+    total_shares = sum(p.shares for p in positions)
+    price_per_share = current_valuation // total_shares if total_shares > 0 else 0
+
+    # Calculate shares per class for class ownership
+    shares_per_class = {}
+    for p in positions:
+        if p.share_class_id not in shares_per_class:
+            shares_per_class[p.share_class_id] = 0
+        shares_per_class[p.share_class_id] += p.shares
+
+    # Group positions by wallet
+    wallet_positions = {}
+    for p in positions:
+        if p.wallet not in wallet_positions:
+            wallet_positions[p.wallet] = []
+        wallet_positions[p.wallet].append(p)
+
+    # Build wallet summaries
+    wallet_summaries = []
+    for wallet, wallet_pos in wallet_positions.items():
+        wallet_shares = sum(p.shares for p in wallet_pos)
+        wallet_cost_basis = sum(p.cost_basis for p in wallet_pos)
+        wallet_current_value = wallet_shares * price_per_share
+
+        # Build position entries for this wallet
+        pos_entries = []
+        for p in wallet_pos:
+            sc = share_class_map.get(p.share_class_id)
+            if not sc:
+                continue
+
+            current_value = p.shares * price_per_share
+            class_shares = shares_per_class.get(p.share_class_id, 1)
+
+            pos_entries.append(EnhancedCapTableEntry(
+                wallet=p.wallet,
+                share_class_id=sc.id,
+                share_class_name=sc.name,
+                share_class_symbol=sc.symbol,
+                shares=p.shares,
+                cost_basis=p.cost_basis,
+                current_value=current_value,
+                ownership_pct=round((p.shares / total_shares * 100), 4) if total_shares > 0 else 0,
+                class_ownership_pct=round((p.shares / class_shares * 100), 4) if class_shares > 0 else 0,
+                unrealized_gain=current_value - p.cost_basis,
+                price_per_share=price_per_share,
+                preference_amount=int(p.cost_basis * sc.preference_multiple),
+            ))
+
+        wallet_summaries.append(WalletSummary(
+            wallet=wallet,
+            total_shares=wallet_shares,
+            total_cost_basis=wallet_cost_basis,
+            total_current_value=wallet_current_value,
+            total_ownership_pct=round((wallet_shares / total_shares * 100), 4) if total_shares > 0 else 0,
+            total_unrealized_gain=wallet_current_value - wallet_cost_basis,
+            positions=pos_entries,
+        ))
+
+    # Sort by ownership descending
+    wallet_summaries.sort(key=lambda x: x.total_shares, reverse=True)
+
+    return EnhancedCapTableByWalletResponse(
+        slot=current_slot,
+        timestamp=datetime.utcnow(),
+        current_valuation=current_valuation,
+        price_per_share=price_per_share,
+        total_shares=total_shares,
+        holder_count=len(wallet_summaries),
+        wallets=wallet_summaries,
+    )

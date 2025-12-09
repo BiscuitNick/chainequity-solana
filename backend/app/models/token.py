@@ -20,6 +20,12 @@ class Token(Base):
     total_supply = Column(BigInteger, nullable=False)
     features = Column(JSON, nullable=False)
     is_paused = Column(Boolean, default=False)
+
+    # Current valuation cache (updated when valuation events occur)
+    current_valuation = Column(BigInteger, nullable=True)  # Company valuation in cents
+    current_price_per_share = Column(BigInteger, nullable=True)  # Price per share in cents
+    last_valuation_date = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -32,6 +38,13 @@ class Token(Base):
     proposals = relationship("Proposal", back_populates="token", lazy="dynamic")
     corporate_actions = relationship("CorporateAction", back_populates="token", lazy="dynamic")
     snapshots = relationship("CapTableSnapshot", back_populates="token", lazy="dynamic")
+
+    # Investment modeling relationships
+    share_classes = relationship("ShareClass", back_populates="token", lazy="dynamic")
+    share_positions = relationship("SharePosition", back_populates="token", lazy="dynamic")
+    funding_rounds = relationship("FundingRound", back_populates="token", lazy="dynamic")
+    convertible_instruments = relationship("ConvertibleInstrument", back_populates="token", lazy="dynamic")
+    valuation_events = relationship("ValuationEvent", back_populates="token", lazy="dynamic")
 
     def __repr__(self):
         return f"<Token {self.symbol} (ID: {self.token_id})>"

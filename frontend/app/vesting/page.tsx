@@ -287,6 +287,11 @@ export default function VestingPage() {
                         <span className="px-2 py-0.5 bg-blue-500/10 text-blue-500 rounded text-xs">
                           {formatVestingType(schedule.vesting_type)}
                         </span>
+                        {schedule.share_class && (
+                          <span className="px-2 py-0.5 bg-purple-500/10 text-purple-500 rounded text-xs">
+                            {schedule.share_class.symbol} ({schedule.share_class.preference_multiple}x pref)
+                          </span>
+                        )}
                         {schedule.termination_type && (
                           <span className="px-2 py-0.5 bg-orange-500/10 text-orange-500 rounded text-xs">
                             {schedule.termination_type.replace('_', ' ')}
@@ -328,6 +333,11 @@ export default function VestingPage() {
                       <div className="text-xs text-green-500 mt-1">
                         {schedule.released_amount.toLocaleString()} released
                       </div>
+                      {schedule.share_class && schedule.preference_amount > 0 && (
+                        <div className="text-xs text-purple-500 mt-1">
+                          ${(schedule.preference_amount / 100).toLocaleString()} preference
+                        </div>
+                      )}
                     </div>
                   </div>
 

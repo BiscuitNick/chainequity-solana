@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from typing import List
 from datetime import datetime
 
@@ -9,12 +10,14 @@ from app.models.database import get_db
 from app.models.vesting import VestingSchedule
 from app.models.token import Token
 from app.models.snapshot import CurrentBalance
+from app.models.share_class import ShareClass, SharePosition
 from app.schemas.vesting import (
     VestingScheduleResponse,
     CreateVestingRequest,
     TerminateVestingRequest,
     TerminationPreviewResponse,
     TerminationType,
+    ShareClassInfo,
 )
 from app.services.solana_client import get_solana_client
 from solders.pubkey import Pubkey
@@ -58,12 +61,28 @@ async def _auto_release_vested(db: AsyncSession, token_id: int, schedule: Vestin
         # Credit to beneficiary's cap table balance
         await _update_balance(db, token_id, schedule.beneficiary, releasable)
 
+        # Also update SharePosition if share class is set
+        if schedule.share_class_id:
+            result = await db.execute(
+                select(SharePosition).where(
+                    SharePosition.token_id == token_id,
+                    SharePosition.wallet == schedule.beneficiary,
+                    SharePosition.share_class_id == schedule.share_class_id
+                )
+            )
+            position = result.scalar_one_or_none()
+            if position:
+                position.shares += releasable
+                position.updated_at = datetime.utcnow()
+
 
 @router.get("", response_model=List[VestingScheduleResponse])
 async def list_vesting_schedules(token_id: int = Path(...), db: AsyncSession = Depends(get_db)):
     """List all vesting schedules for a token - auto-releases vested tokens"""
     result = await db.execute(
-        select(VestingSchedule).where(VestingSchedule.token_id == token_id)
+        select(VestingSchedule)
+        .options(selectinload(VestingSchedule.share_class))
+        .where(VestingSchedule.token_id == token_id)
     )
     schedules = result.scalars().all()
 
@@ -81,7 +100,9 @@ async def list_vesting_schedules(token_id: int = Path(...), db: AsyncSession = D
 async def get_vesting_schedule(token_id: int = Path(...), schedule_id: str = Path(...), db: AsyncSession = Depends(get_db)):
     """Get a specific vesting schedule - auto-releases vested tokens"""
     result = await db.execute(
-        select(VestingSchedule).where(
+        select(VestingSchedule)
+        .options(selectinload(VestingSchedule.share_class))
+        .where(
             VestingSchedule.token_id == token_id,
             VestingSchedule.on_chain_address == schedule_id
         )
@@ -107,7 +128,9 @@ async def get_wallet_vesting_schedules(
 ):
     """Get all vesting schedules for a wallet"""
     result = await db.execute(
-        select(VestingSchedule).where(
+        select(VestingSchedule)
+        .options(selectinload(VestingSchedule.share_class))
+        .where(
             VestingSchedule.token_id == token_id,
             VestingSchedule.beneficiary == address
         )
@@ -136,6 +159,19 @@ async def create_vesting_schedule(
     if not token.features.get("vesting_enabled", False):
         raise HTTPException(status_code=400, detail="Vesting not enabled for this token")
 
+    # Validate share class if provided
+    share_class = None
+    if request.share_class_id:
+        result = await db.execute(
+            select(ShareClass).where(
+                ShareClass.id == request.share_class_id,
+                ShareClass.token_id == token_id
+            )
+        )
+        share_class = result.scalar_one_or_none()
+        if not share_class:
+            raise HTTPException(status_code=404, detail="Share class not found")
+
     # Validate beneficiary address
     try:
         beneficiary_pubkey = Pubkey.from_string(request.beneficiary)
@@ -162,10 +198,13 @@ async def create_vesting_schedule(
     # Use utcfromtimestamp to match utcnow() used in calculate_vested
     schedule = VestingSchedule(
         token_id=token_id,
+        share_class_id=request.share_class_id,
         on_chain_address=str(vesting_pda),
         beneficiary=request.beneficiary,
         total_amount=request.total_amount,
         released_amount=0,
+        cost_basis=request.cost_basis,
+        price_per_share=request.price_per_share,
         start_time=datetime.utcfromtimestamp(request.start_time),
         cliff_seconds=request.cliff_seconds,
         duration_seconds=request.duration_seconds,
@@ -175,6 +214,35 @@ async def create_vesting_schedule(
     db.add(schedule)
     await db.commit()
     await db.refresh(schedule)
+
+    # Also create/update share position if share class is specified
+    if share_class:
+        result = await db.execute(
+            select(SharePosition).where(
+                SharePosition.token_id == token_id,
+                SharePosition.wallet == request.beneficiary,
+                SharePosition.share_class_id == request.share_class_id
+            )
+        )
+        existing_position = result.scalar_one_or_none()
+
+        if existing_position:
+            # Note: vesting shares start unvested, so we don't add to shares until released
+            # But we track cost basis now
+            existing_position.cost_basis += request.cost_basis
+        else:
+            # Create position with 0 shares (shares added as they vest/release)
+            position = SharePosition(
+                token_id=token_id,
+                wallet=request.beneficiary,
+                share_class_id=request.share_class_id,
+                shares=0,  # Shares added as they vest
+                cost_basis=request.cost_basis,
+                price_per_share=request.price_per_share,
+                notes=f"Vesting schedule: {schedule.on_chain_address}",
+            )
+            db.add(position)
+        await db.commit()
 
     return {
         "message": f"Successfully created vesting schedule for {request.total_amount} tokens",
@@ -396,6 +464,20 @@ def _calculate_termination_preview(
 
 def _schedule_to_response(s: VestingSchedule) -> VestingScheduleResponse:
     vested = s.calculate_vested(datetime.utcnow())
+
+    # Build share class info if present
+    share_class_info = None
+    preference_amount = 0
+    if s.share_class:
+        share_class_info = ShareClassInfo(
+            id=s.share_class.id,
+            name=s.share_class.name,
+            symbol=s.share_class.symbol,
+            priority=s.share_class.priority,
+            preference_multiple=s.share_class.preference_multiple,
+        )
+        preference_amount = int(s.cost_basis * s.share_class.preference_multiple)
+
     return VestingScheduleResponse(
         id=s.on_chain_address,
         beneficiary=s.beneficiary,
@@ -410,4 +492,9 @@ def _schedule_to_response(s: VestingSchedule) -> VestingScheduleResponse:
         is_terminated=s.is_terminated,
         termination_type=s.termination_type,
         terminated_at=s.terminated_at,
+        share_class_id=s.share_class_id,
+        share_class=share_class_info,
+        cost_basis=s.cost_basis,
+        price_per_share=s.price_per_share,
+        preference_amount=preference_amount,
     )

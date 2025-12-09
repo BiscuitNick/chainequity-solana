@@ -17,6 +17,15 @@ class TerminationType(str, Enum):
     ACCELERATED = "accelerated"
 
 
+class ShareClassInfo(BaseModel):
+    """Share class info for vesting response"""
+    id: int
+    name: str
+    symbol: str
+    priority: int
+    preference_multiple: float
+
+
 class VestingScheduleResponse(BaseModel):
     id: str
     beneficiary: str
@@ -31,6 +40,12 @@ class VestingScheduleResponse(BaseModel):
     is_terminated: bool
     termination_type: Optional[str] = None
     terminated_at: Optional[datetime] = None
+    # Share class info
+    share_class_id: Optional[int] = None
+    share_class: Optional[ShareClassInfo] = None
+    cost_basis: int = 0  # In cents
+    price_per_share: int = 0  # In cents
+    preference_amount: int = 0  # cost_basis * preference_multiple
 
 
 class CreateVestingRequest(BaseModel):
@@ -41,6 +56,10 @@ class CreateVestingRequest(BaseModel):
     duration_seconds: int
     vesting_type: VestingType
     revocable: bool = False
+    # Share class for preference tracking
+    share_class_id: Optional[int] = None
+    cost_basis: int = 0  # In cents - what was paid for these shares (0 for grants)
+    price_per_share: int = 0  # In cents - price at grant time
 
 
 class TerminateVestingRequest(BaseModel):

@@ -22,10 +22,13 @@ class VestingSchedule(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     token_id = Column(Integer, ForeignKey("tokens.token_id"), nullable=False, index=True)
+    share_class_id = Column(Integer, ForeignKey("share_classes.id"), nullable=True, index=True)
     on_chain_address = Column(String(44), nullable=False, unique=True)
     beneficiary = Column(String(44), nullable=False, index=True)
     total_amount = Column(BigInteger, nullable=False)
     released_amount = Column(BigInteger, nullable=False, default=0)
+    cost_basis = Column(BigInteger, nullable=False, default=0)  # In cents - what was paid for these shares
+    price_per_share = Column(BigInteger, nullable=False, default=0)  # In cents - price at grant time
     start_time = Column(DateTime, nullable=False)
     cliff_seconds = Column(BigInteger, nullable=False, default=0)
     duration_seconds = Column(BigInteger, nullable=False)
@@ -45,6 +48,7 @@ class VestingSchedule(Base):
 
     # Relationships
     token = relationship("Token", back_populates="vesting_schedules")
+    share_class = relationship("ShareClass", backref="vesting_schedules")
 
     @property
     def is_terminated(self) -> bool:

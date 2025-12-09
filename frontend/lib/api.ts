@@ -314,6 +314,140 @@ class ApiClient {
       body: JSON.stringify({ new_symbol: newSymbol }),
     })
   }
+
+  // ==================== Investment Modeling Endpoints ====================
+
+  // Share Classes
+  async getShareClasses(tokenId: number) {
+    return this.request<ShareClass[]>(`/tokens/${tokenId}/share-classes`)
+  }
+
+  async createShareClass(tokenId: number, data: CreateShareClassRequest) {
+    return this.request<ShareClass>(`/tokens/${tokenId}/share-classes`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async getShareClass(tokenId: number, shareClassId: number) {
+    return this.request<ShareClass>(`/tokens/${tokenId}/share-classes/${shareClassId}`)
+  }
+
+  async getSharePositions(tokenId: number, shareClassId: number) {
+    return this.request<SharePosition[]>(`/tokens/${tokenId}/share-classes/${shareClassId}/positions`)
+  }
+
+  async issueShares(tokenId: number, data: IssueSharesRequest) {
+    return this.request<IssueSharesResponse>(`/tokens/${tokenId}/share-classes/issue`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  // Funding Rounds
+  async getFundingRounds(tokenId: number) {
+    return this.request<FundingRound[]>(`/tokens/${tokenId}/funding-rounds`)
+  }
+
+  async createFundingRound(tokenId: number, data: CreateFundingRoundRequest) {
+    return this.request<FundingRound>(`/tokens/${tokenId}/funding-rounds`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async getFundingRound(tokenId: number, roundId: number) {
+    return this.request<FundingRound>(`/tokens/${tokenId}/funding-rounds/${roundId}`)
+  }
+
+  async addInvestment(tokenId: number, roundId: number, data: AddInvestmentRequest) {
+    return this.request<Investment>(`/tokens/${tokenId}/funding-rounds/${roundId}/investments`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async getRoundInvestments(tokenId: number, roundId: number) {
+    return this.request<Investment[]>(`/tokens/${tokenId}/funding-rounds/${roundId}/investments`)
+  }
+
+  async closeFundingRound(tokenId: number, roundId: number) {
+    return this.request<FundingRound>(`/tokens/${tokenId}/funding-rounds/${roundId}/close`, {
+      method: 'POST',
+    })
+  }
+
+  // Convertible Instruments
+  async getConvertibles(tokenId: number) {
+    return this.request<ConvertibleInstrument[]>(`/tokens/${tokenId}/convertibles`)
+  }
+
+  async createConvertible(tokenId: number, data: CreateConvertibleRequest) {
+    return this.request<ConvertibleInstrument>(`/tokens/${tokenId}/convertibles`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async getConvertible(tokenId: number, convertibleId: number) {
+    return this.request<ConvertibleInstrument>(`/tokens/${tokenId}/convertibles/${convertibleId}`)
+  }
+
+  async convertInstrument(tokenId: number, convertibleId: number, roundId: number) {
+    return this.request<ConvertibleInstrument>(`/tokens/${tokenId}/convertibles/${convertibleId}/convert`, {
+      method: 'POST',
+      body: JSON.stringify({ funding_round_id: roundId }),
+    })
+  }
+
+  // Valuations
+  async getValuationHistory(tokenId: number) {
+    return this.request<ValuationEvent[]>(`/tokens/${tokenId}/valuations`)
+  }
+
+  async createValuation(tokenId: number, data: CreateValuationRequest) {
+    return this.request<ValuationEvent>(`/tokens/${tokenId}/valuations`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async getCurrentValuation(tokenId: number) {
+    return this.request<{ valuation: number; price_per_share: number; last_updated: string | null }>(
+      `/tokens/${tokenId}/valuations/current`
+    )
+  }
+
+  // Enhanced Cap Table
+  async getEnhancedCapTable(tokenId: number) {
+    return this.request<EnhancedCapTableResponse>(`/tokens/${tokenId}/captable/enhanced`)
+  }
+
+  async getEnhancedCapTableByWallet(tokenId: number) {
+    return this.request<EnhancedCapTableByWalletResponse>(`/tokens/${tokenId}/captable/enhanced/by-wallet`)
+  }
+
+  // Simulators
+  async simulateWaterfall(tokenId: number, exitAmount: number) {
+    return this.request<WaterfallResponse>(`/tokens/${tokenId}/simulator/waterfall`, {
+      method: 'POST',
+      body: JSON.stringify({ exit_amount: exitAmount }),
+    })
+  }
+
+  async simulateWaterfallScenarios(tokenId: number, exitAmounts: number[]) {
+    return this.request<{ scenarios: WaterfallResponse[] }>(`/tokens/${tokenId}/simulator/waterfall/scenarios`, {
+      method: 'POST',
+      body: JSON.stringify({ exit_amounts: exitAmounts }),
+    })
+  }
+
+  async simulateDilution(tokenId: number, rounds: SimulatedRoundInput[]) {
+    return this.request<DilutionResponse>(`/tokens/${tokenId}/simulator/dilution`, {
+      method: 'POST',
+      body: JSON.stringify({ rounds }),
+    })
+  }
 }
 
 // Types
@@ -444,6 +578,14 @@ export interface IssuanceStatsResponse {
   volume_24h: number
 }
 
+export interface VestingShareClassInfo {
+  id: number
+  name: string
+  symbol: string
+  priority: number
+  preference_multiple: number
+}
+
 export interface VestingSchedule {
   id: string
   beneficiary: string
@@ -458,6 +600,11 @@ export interface VestingSchedule {
   is_terminated: boolean
   termination_type?: string
   terminated_at?: string
+  share_class_id?: number
+  share_class?: VestingShareClassInfo
+  cost_basis: number
+  price_per_share: number
+  preference_amount: number
 }
 
 export interface CreateVestingRequest {
@@ -468,6 +615,9 @@ export interface CreateVestingRequest {
   duration_seconds: number
   vesting_type: string
   revocable: boolean
+  share_class_id?: number
+  cost_basis?: number
+  price_per_share?: number
 }
 
 export interface TerminateVestingRequest {
@@ -611,6 +761,300 @@ export interface CorporateAction {
   executed_by: string
   signature?: string
   slot?: number
+}
+
+// Investment Modeling Types
+export type RoundType = 'seed' | 'series_a' | 'series_b' | 'series_c' | 'series_d' | 'bridge' | 'other'
+export type InstrumentType = 'safe' | 'convertible_note'
+export type SafeType = 'pre_money' | 'post_money'
+export type InstrumentStatus = 'outstanding' | 'converted' | 'cancelled'
+export type RoundStatus = 'open' | 'closed' | 'cancelled'
+
+export interface ShareClass {
+  id: number
+  token_id: number
+  name: string
+  symbol: string
+  priority: number
+  preference_multiple: number
+  created_at: string
+}
+
+export interface SharePosition {
+  id?: number
+  token_id?: number
+  wallet: string
+  share_class_id?: number
+  share_class: ShareClass
+  shares: number
+  cost_basis: number
+  price_per_share: number
+  current_value?: number
+  preference_amount?: number
+  acquired_date?: string
+  funding_round_id?: number
+  notes?: string
+}
+
+export interface FundingRound {
+  id: number
+  token_id: number
+  name: string
+  round_type: RoundType
+  share_class_id?: number
+  pre_money_valuation: number
+  amount_raised: number
+  post_money_valuation: number
+  price_per_share: number
+  shares_issued: number
+  status: RoundStatus
+  opened_at: string
+  closed_at?: string
+  notes?: string
+}
+
+export interface Investment {
+  id: number
+  funding_round_id: number
+  investor_wallet: string
+  amount_invested: number
+  shares_issued: number
+  price_per_share: number
+  invested_at: string
+  notes?: string
+}
+
+export interface ConvertibleInstrument {
+  id: number
+  token_id: number
+  instrument_type: InstrumentType
+  safe_type?: SafeType
+  investor_wallet: string
+  principal_amount: number
+  valuation_cap?: number
+  discount_rate?: number
+  interest_rate?: number
+  maturity_date?: string
+  status: InstrumentStatus
+  converted_to_round_id?: number
+  conversion_shares?: number
+  conversion_price?: number
+  created_at: string
+  converted_at?: string
+}
+
+export interface ValuationEvent {
+  id: number
+  token_id: number
+  valuation: number
+  price_per_share: number
+  event_type: string
+  trigger_id?: string
+  notes?: string
+  created_at: string
+}
+
+// Enhanced Cap Table Types
+export interface ShareClassSummary {
+  id: number
+  name: string
+  symbol: string
+  priority: number
+  preference_multiple: number
+  total_shares: number
+  total_value: number
+  holder_count: number
+}
+
+export interface EnhancedCapTableEntry {
+  wallet: string
+  share_class_id: number
+  share_class_name: string
+  share_class_symbol: string
+  shares: number
+  cost_basis: number
+  current_value: number
+  ownership_pct: number
+  class_ownership_pct: number
+  unrealized_gain: number
+  price_per_share: number
+  preference_amount: number
+}
+
+export interface EnhancedCapTableResponse {
+  slot: number
+  timestamp: string
+  current_valuation: number
+  price_per_share: number
+  last_valuation_date?: string
+  total_shares: number
+  total_cost_basis: number
+  total_current_value: number
+  holder_count: number
+  share_classes: ShareClassSummary[]
+  positions: EnhancedCapTableEntry[]
+}
+
+export interface WalletSummary {
+  wallet: string
+  total_shares: number
+  total_cost_basis: number
+  total_current_value: number
+  total_ownership_pct: number
+  total_unrealized_gain: number
+  positions: EnhancedCapTableEntry[]
+}
+
+export interface EnhancedCapTableByWalletResponse {
+  slot: number
+  timestamp: string
+  current_valuation: number
+  price_per_share: number
+  total_shares: number
+  holder_count: number
+  wallets: WalletSummary[]
+}
+
+// Waterfall Types
+export interface WaterfallPayout {
+  wallet: string
+  share_class_name: string
+  priority: number
+  shares: number
+  cost_basis: number
+  preference_amount: number
+  payout: number
+  payout_source: 'preference' | 'partial_preference' | 'none'
+}
+
+export interface WaterfallTier {
+  priority: number
+  total_preference: number
+  amount_available: number
+  amount_distributed: number
+  fully_satisfied: boolean
+  payouts: WaterfallPayout[]
+}
+
+export interface WaterfallResponse {
+  exit_amount: number
+  total_shares: number
+  remaining_amount: number
+  tiers: WaterfallTier[]
+  payouts_by_wallet: Record<string, number>
+}
+
+// Dilution Types
+export interface SimulatedRoundInput {
+  name: string
+  pre_money_valuation: number
+  amount_raised: number
+}
+
+export interface DilutedPosition {
+  wallet: string
+  shares_before: number
+  shares_after: number
+  ownership_before: number
+  ownership_after: number
+  dilution_pct: number
+  value_before: number
+  value_after: number
+}
+
+export interface NewInvestor {
+  round_name: string
+  amount_invested: number
+  shares_received: number
+  ownership_pct: number
+  price_per_share: number
+}
+
+export interface DilutionResponse {
+  rounds: Array<{
+    name: string
+    pre_money_valuation: number
+    amount_raised: number
+    post_money_valuation: number
+  }>
+  before: {
+    total_shares: number
+    valuation: number
+    price_per_share: number
+  }
+  after: {
+    total_shares: number
+    valuation: number
+    price_per_share: number
+  }
+  existing_holders: DilutedPosition[]
+  new_investors: NewInvestor[]
+}
+
+// Request Types
+export interface CreateShareClassRequest {
+  name: string
+  symbol: string
+  priority: number
+  preference_multiple: number
+}
+
+export interface CreateFundingRoundRequest {
+  name: string
+  round_type: RoundType
+  share_class_id: number
+  pre_money_valuation: number
+  notes?: string
+}
+
+export interface AddInvestmentRequest {
+  investor_wallet: string
+  amount_invested: number
+  notes?: string
+}
+
+export interface CreateConvertibleRequest {
+  instrument_type: InstrumentType
+  safe_type?: SafeType
+  investor_wallet: string
+  principal_amount: number
+  valuation_cap?: number
+  discount_rate?: number
+  interest_rate?: number
+  maturity_date?: string
+}
+
+export interface CreateValuationRequest {
+  valuation: number
+  notes?: string
+}
+
+export interface IssueSharesRequest {
+  recipient_wallet: string
+  share_class_id: number
+  shares: number
+  cost_basis?: number  // In cents
+  price_per_share?: number  // In cents
+  notes?: string
+}
+
+export interface IssueSharesResponse {
+  id: number
+  recipient_wallet: string
+  share_class: ShareClass
+  shares: number
+  cost_basis: number
+  price_per_share: number
+  notes?: string
+  created_at: string
+}
+
+export interface WaterfallRequest {
+  exit_amount: number
+}
+
+export interface DilutionRequest {
+  rounds: SimulatedRoundInput[]
 }
 
 // Token creation types

@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { X, Calendar, Clock, AlertTriangle } from 'lucide-react'
-import { api } from '@/lib/api'
+import { X, Calendar, Clock, AlertTriangle, Layers } from 'lucide-react'
+import { api, ShareClass } from '@/lib/api'
 
 interface CreateVestingScheduleModalProps {
   isOpen: boolean
@@ -84,6 +84,32 @@ export function CreateVestingScheduleModal({
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
+  // Share class state
+  const [shareClasses, setShareClasses] = useState<ShareClass[]>([])
+  const [selectedShareClassId, setSelectedShareClassId] = useState<number | null>(null)
+  const [costBasis, setCostBasis] = useState('')
+  const [pricePerShare, setPricePerShare] = useState('')
+  const [loadingShareClasses, setLoadingShareClasses] = useState(false)
+
+  // Fetch share classes when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      fetchShareClasses()
+    }
+  }, [isOpen, tokenId])
+
+  const fetchShareClasses = async () => {
+    setLoadingShareClasses(true)
+    try {
+      const classes = await api.getShareClasses(tokenId)
+      setShareClasses(classes)
+    } catch (err) {
+      console.error('Failed to fetch share classes:', err)
+    } finally {
+      setLoadingShareClasses(false)
+    }
+  }
+
   if (!isOpen) return null
 
   // For demo mode (minutes/hours), always show time picker when custom start is selected
@@ -148,6 +174,10 @@ export function CreateVestingScheduleModal({
     setIsSubmitting(true)
 
     try {
+      // Parse cost basis and price per share (convert dollars to cents)
+      const costBasisCents = costBasis ? Math.round(parseFloat(costBasis) * 100) : 0
+      const pricePerShareCents = pricePerShare ? Math.round(parseFloat(pricePerShare) * 100) : 0
+
       await api.createVestingSchedule(tokenId, {
         beneficiary,
         total_amount: amountNum,
@@ -156,6 +186,9 @@ export function CreateVestingScheduleModal({
         duration_seconds: durationSeconds,
         vesting_type: onChainVestingType,
         revocable,
+        share_class_id: selectedShareClassId || undefined,
+        cost_basis: costBasisCents || undefined,
+        price_per_share: pricePerShareCents || undefined,
       })
 
       setSuccess(`Successfully created vesting schedule for ${amountNum.toLocaleString()} ${tokenSymbol}`)
@@ -170,6 +203,9 @@ export function CreateVestingScheduleModal({
         setDurationValue('48')
         setStartNow(true)
         setRevocable(true)
+        setSelectedShareClassId(null)
+        setCostBasis('')
+        setPricePerShare('')
         setSuccess(null)
         onSuccess()
         onClose()
@@ -268,6 +304,71 @@ export function CreateVestingScheduleModal({
                 </span>
               </div>
             </div>
+
+            {/* Share Class Selection */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-2">
+                <Layers className="h-4 w-4" />
+                Share Class (Optional)
+              </label>
+              <select
+                value={selectedShareClassId || ''}
+                onChange={(e) => {
+                  const value = e.target.value
+                  setSelectedShareClassId(value ? parseInt(value) : null)
+                }}
+                className="w-full px-3 py-2 border rounded-md bg-background"
+                disabled={isSubmitting || loadingShareClasses}
+              >
+                <option value="">No share class (common equity)</option>
+                {shareClasses.map((sc) => (
+                  <option key={sc.id} value={sc.id}>
+                    {sc.name} ({sc.symbol}) - Priority {sc.priority}, {sc.preference_multiple}x preference
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Assign vested shares to a specific share class for cap table tracking
+              </p>
+            </div>
+
+            {/* Cost Basis and Price Per Share - only show when share class is selected */}
+            {selectedShareClassId && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Cost Basis ($)</label>
+                  <input
+                    type="number"
+                    value={costBasis}
+                    onChange={(e) => setCostBasis(e.target.value)}
+                    placeholder="0.00"
+                    min="0"
+                    step="0.01"
+                    className="w-full px-3 py-2 border rounded-md bg-background"
+                    disabled={isSubmitting}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Total amount paid for shares
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Price Per Share ($)</label>
+                  <input
+                    type="number"
+                    value={pricePerShare}
+                    onChange={(e) => setPricePerShare(e.target.value)}
+                    placeholder="0.00"
+                    min="0"
+                    step="0.01"
+                    className="w-full px-3 py-2 border rounded-md bg-background"
+                    disabled={isSubmitting}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Strike price per share
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Vesting Type */}
             <div className="space-y-2">
@@ -444,6 +545,24 @@ export function CreateVestingScheduleModal({
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <span className="text-muted-foreground">Total:</span>
                   <span>{parseInt(totalAmount || '0').toLocaleString()} {tokenSymbol}</span>
+                  {selectedShareClassId && (
+                    <>
+                      <span className="text-muted-foreground">Share Class:</span>
+                      <span>{shareClasses.find(sc => sc.id === selectedShareClassId)?.name || 'Unknown'}</span>
+                    </>
+                  )}
+                  {costBasis && (
+                    <>
+                      <span className="text-muted-foreground">Cost Basis:</span>
+                      <span>${parseFloat(costBasis).toLocaleString()}</span>
+                    </>
+                  )}
+                  {pricePerShare && (
+                    <>
+                      <span className="text-muted-foreground">Price/Share:</span>
+                      <span>${parseFloat(pricePerShare).toFixed(2)}</span>
+                    </>
+                  )}
                   <span className="text-muted-foreground">Starts:</span>
                   <span>{startNow ? 'Immediately' : `${startDate} ${startTime}`}</span>
                   <span className="text-muted-foreground">Cliff ends:</span>

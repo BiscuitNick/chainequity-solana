@@ -2,6 +2,7 @@
 from fastapi import APIRouter
 
 from app.api.v1 import factory, tokens, allowlist, captable, vesting, dividends, governance, admin, sync, issuance, transfers
+from app.api.v1 import share_classes, funding_rounds, convertibles, valuations, simulator
 
 api_router = APIRouter()
 
@@ -20,6 +21,13 @@ tokens_router.include_router(dividends.router, prefix="/{token_id}/dividends", t
 tokens_router.include_router(governance.router, prefix="/{token_id}/governance", tags=["Governance"])
 tokens_router.include_router(admin.router, prefix="/{token_id}/admin", tags=["Admin"])
 tokens_router.include_router(transfers.router, tags=["Transfers"])
+
+# Investment modeling routers
+tokens_router.include_router(share_classes.router, prefix="/{token_id}/share-classes", tags=["Share Classes"])
+tokens_router.include_router(funding_rounds.router, prefix="/{token_id}/funding-rounds", tags=["Funding Rounds"])
+tokens_router.include_router(convertibles.router, prefix="/{token_id}/convertibles", tags=["Convertibles"])
+tokens_router.include_router(valuations.router, prefix="/{token_id}/valuations", tags=["Valuations"])
+tokens_router.include_router(simulator.router, prefix="/{token_id}/simulator", tags=["Simulator"])
 
 # Include all top-level routers
 api_router.include_router(factory.router, prefix="/factory", tags=["Factory"])
