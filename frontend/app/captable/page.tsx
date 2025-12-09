@@ -30,20 +30,61 @@ export default function CapTablePage() {
         // Use V2 snapshot API for historical data
         const snapshot = await api.getCapTableSnapshotV2AtSlot(selectedToken.tokenId, selectedSlot)
         setHistoricalSnapshot(snapshot)
-        // Convert snapshot to CapTableResponse format for display
+
+        // Build holders from both token balances AND share positions
+        const holdersMap = new Map<string, { wallet: string; balance: number; shares: number; status: string }>()
+
+        // Add token balance holders
+        for (const h of (snapshot.holders || [])) {
+          holdersMap.set(h.wallet, {
+            wallet: h.wallet,
+            balance: h.balance || 0,
+            shares: 0,
+            status: h.status || 'active',
+          })
+        }
+
+        // Add/update share position holders
+        for (const sp of (snapshot.share_positions || [])) {
+          const existing = holdersMap.get(sp.wallet)
+          if (existing) {
+            existing.shares += sp.shares || 0
+          } else {
+            holdersMap.set(sp.wallet, {
+              wallet: sp.wallet,
+              balance: 0,
+              shares: sp.shares || 0,
+              status: 'active',
+            })
+          }
+        }
+
+        // Calculate total shares for ownership percentage
+        const totalShares = snapshot.total_shares || Array.from(holdersMap.values()).reduce((sum, h) => sum + h.shares, 0)
+        const totalSupply = snapshot.total_supply || 0
+
+        // Convert to holders array with ownership calculation
+        // Use shares if available, otherwise use token balance
+        const holders = Array.from(holdersMap.values()).map(h => {
+          const effectiveBalance = h.shares > 0 ? h.shares : h.balance
+          const totalForPct = h.shares > 0 ? totalShares : totalSupply
+          return {
+            wallet: h.wallet,
+            balance: effectiveBalance,
+            ownership_pct: totalForPct > 0 ? (effectiveBalance / totalForPct) * 100 : 0,
+            vested: 0,
+            unvested: 0,
+            status: h.status,
+          }
+        }).filter(h => h.balance > 0)  // Only show holders with positive balance
+          .sort((a, b) => b.balance - a.balance)  // Sort by balance descending
+
         const capTableFromSnapshot: CapTableResponse = {
           slot: snapshot.slot,
           timestamp: snapshot.timestamp || new Date().toISOString(),
-          total_supply: snapshot.total_supply,
-          holder_count: snapshot.holder_count,
-          holders: snapshot.holders.map((h: any) => ({
-            wallet: h.wallet,
-            balance: h.balance,
-            ownership_pct: snapshot.total_supply > 0 ? (h.balance / snapshot.total_supply) * 100 : 0,
-            vested: 0,
-            unvested: 0,
-            status: h.status || 'active',
-          })),
+          total_supply: totalShares > 0 ? totalShares : totalSupply,
+          holder_count: holders.length,
+          holders,
         }
         setCapTable(capTableFromSnapshot)
       } else {

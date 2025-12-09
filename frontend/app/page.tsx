@@ -90,12 +90,16 @@ export default function DashboardPage() {
           ])
           setHistoricalSnapshot(snapshot)
           // Convert snapshot to CapTableResponse format for display
-          const capTableFromSnapshot: CapTableResponse = {
-            slot: snapshot.slot,
-            timestamp: snapshot.timestamp || new Date().toISOString(),
-            total_supply: snapshot.total_supply,
-            holder_count: snapshot.holder_count,
-            holders: snapshot.holders.map((h: any) => ({
+          // Combine holders from snapshot with share position holders
+          const snapshotHolders = snapshot.holders || []
+          const snapshotHolderWallets = new Set(snapshotHolders.map((h: any) => h.wallet))
+
+          // Get unique shareholders from share positions
+          const shareHolderWallets = new Set(sharePositionsData.map((sp: SharePosition) => sp.wallet))
+
+          // Combine: all snapshot holders + share position holders not in snapshot
+          const combinedHolders = [
+            ...snapshotHolders.map((h: any) => ({
               wallet: h.wallet,
               balance: h.balance,
               ownership_pct: snapshot.total_supply > 0 ? (h.balance / snapshot.total_supply) * 100 : 0,
@@ -103,6 +107,24 @@ export default function DashboardPage() {
               unvested: 0,
               status: h.status || 'active',
             })),
+            ...Array.from(shareHolderWallets)
+              .filter(wallet => !snapshotHolderWallets.has(wallet))
+              .map(wallet => ({
+                wallet,
+                balance: 0,
+                ownership_pct: 0,
+                vested: 0,
+                unvested: 0,
+                status: 'active',
+              })),
+          ]
+
+          const capTableFromSnapshot: CapTableResponse = {
+            slot: snapshot.slot,
+            timestamp: snapshot.timestamp || new Date().toISOString(),
+            total_supply: snapshot.total_supply,
+            holder_count: combinedHolders.length,
+            holders: combinedHolders,
           }
           setCapTable(capTableFromSnapshot)
           // Clear live stats when viewing historical
@@ -214,7 +236,10 @@ export default function DashboardPage() {
   }, [selectedToken?.tokenId, selectedSlot, isViewingHistorical])
 
   const activeProposalsCount = proposals.filter(p => p.status === 'active').length
-  const activity24h = (transferStats?.transfers_24h ?? 0) + (issuanceStats?.issuances_24h ?? 0)
+  // For live view, use 24h stats; for historical, show total activity count
+  const activity24h = isViewingHistorical
+    ? allActivity.length
+    : (transferStats?.transfers_24h ?? 0) + (issuanceStats?.issuances_24h ?? 0)
 
   return (
     <div className="space-y-6">
@@ -276,14 +301,19 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Activity (24h)</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              {isViewingHistorical ? 'Activity (Total)' : 'Activity (24h)'}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
               {activity24h > 0 ? activity24h : '—'}
             </div>
             <p className="text-xs text-muted-foreground">
-              {issuanceStats?.issuances_24h ?? 0} mints, {transferStats?.transfers_24h ?? 0} transfers
+              {isViewingHistorical
+                ? `${allActivity.filter(a => a.type === 'issuance').length} mints, ${allActivity.filter(a => a.type === 'transfer').length} transfers, ${allActivity.filter(a => a.type === 'share_grant').length} grants`
+                : `${issuanceStats?.issuances_24h ?? 0} mints, ${transferStats?.transfers_24h ?? 0} transfers`
+              }
             </p>
           </CardContent>
         </Card>

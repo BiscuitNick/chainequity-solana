@@ -334,14 +334,29 @@ class HistoryService:
         # Build wallet status map
         wallet_status_map = {w.address: w.status for w in wallets}
 
-        # Build holders list with balance and status
+        # Build holders list from both token balances AND share positions
+        # Combine unique wallets from both sources
         holders = []
+        holder_wallets = set()
+
+        # Add token balance holders
         for b in balances:
             holders.append({
                 "wallet": b.wallet,
                 "balance": b.balance,
                 "status": wallet_status_map.get(b.wallet, "unknown"),
             })
+            holder_wallets.add(b.wallet)
+
+        # Add share position holders (if not already counted)
+        for sp in share_positions:
+            if sp.wallet not in holder_wallets:
+                holders.append({
+                    "wallet": sp.wallet,
+                    "balance": 0,  # No token balance, but has share position
+                    "status": wallet_status_map.get(sp.wallet, "unknown"),
+                })
+                holder_wallets.add(sp.wallet)
 
         # Build share positions list
         positions_data = []
