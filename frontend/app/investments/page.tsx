@@ -37,6 +37,7 @@ import {
   InstrumentType,
   SafeType,
 } from '@/lib/api'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 
 // Helper to format cents as dollars
 const formatDollars = (cents: number) => {
@@ -110,6 +111,9 @@ export default function InvestmentsPage() {
   const [convertibleMaturityDate, setConvertibleMaturityDate] = useState('')
   const [convertibleSafeType, setConvertibleSafeType] = useState<SafeType>('post_money')
   const [convertibleNotes, setConvertibleNotes] = useState('')
+
+  // Confirm dialog state
+  const [convertibleToCancel, setConvertibleToCancel] = useState<ConvertibleInstrument | null>(null)
 
   const fetchData = async () => {
     if (!selectedToken) return
@@ -353,10 +357,15 @@ export default function InvestmentsPage() {
   }
 
   // Cancel convertible
-  const handleCancelConvertible = async (convertibleId: number) => {
-    if (!selectedToken) return
+  const handleCancelConvertible = (conv: ConvertibleInstrument) => {
+    setConvertibleToCancel(conv)
+  }
+
+  const confirmCancelConvertible = async () => {
+    if (!selectedToken || !convertibleToCancel) return
+    setConvertibleToCancel(null)
     try {
-      await api.cancelConvertible(selectedToken.tokenId, convertibleId)
+      await api.cancelConvertible(selectedToken.tokenId, convertibleToCancel.id)
       fetchData()
     } catch (e: any) {
       setError(e.detail || 'Failed to cancel convertible')
@@ -686,9 +695,7 @@ export default function InvestmentsPage() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
-                              if (confirm('Cancel this convertible instrument?')) {
-                                handleCancelConvertible(conv.id)
-                              }
+                              handleCancelConvertible(conv)
                             }}
                             className="p-1 hover:bg-red-500/10 rounded text-red-500"
                           >
@@ -1420,6 +1427,17 @@ export default function InvestmentsPage() {
           </div>
         </div>
       )}
+
+      {/* Cancel Convertible Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!convertibleToCancel}
+        onOpenChange={(open) => !open && setConvertibleToCancel(null)}
+        title="Cancel Convertible Instrument"
+        description={`Are you sure you want to cancel this ${convertibleToCancel?.instrument_type === 'safe' ? 'SAFE' : 'convertible note'}${convertibleToCancel?.name ? ` (${convertibleToCancel.name})` : ''}? This action cannot be undone.`}
+        confirmLabel="Cancel Instrument"
+        variant="destructive"
+        onConfirm={confirmCancelConvertible}
+      />
     </div>
   )
 }

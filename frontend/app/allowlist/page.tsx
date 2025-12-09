@@ -8,6 +8,7 @@ import { UserPlus, UserMinus, UserCheck, Search, Download, Upload, RefreshCw, Co
 import { api, AllowlistEntry } from '@/lib/api'
 import { AddWalletModal } from '@/components/AddWalletModal'
 import { IssueTokensModal } from '@/components/IssueTokensModal'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 
 export default function AllowlistPage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
@@ -15,6 +16,7 @@ export default function AllowlistPage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [showIssueModal, setShowIssueModal] = useState(false)
   const [selectedWallet, setSelectedWallet] = useState<AllowlistEntry | null>(null)
+  const [walletToRevoke, setWalletToRevoke] = useState<AllowlistEntry | null>(null)
   const [allowlist, setAllowlist] = useState<AllowlistEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -69,11 +71,16 @@ export default function AllowlistPage() {
 
   const handleRevoke = async (entry: AllowlistEntry) => {
     if (!selectedToken) return
-    if (!confirm(`Are you sure you want to revoke ${entry.address.slice(0, 8)}...?`)) return
+    setWalletToRevoke(entry)
+  }
 
-    setActionLoading(entry.address)
+  const confirmRevoke = async () => {
+    if (!selectedToken || !walletToRevoke) return
+
+    setActionLoading(walletToRevoke.address)
+    setWalletToRevoke(null)
     try {
-      await api.revokeWallet(selectedToken.tokenId, entry.address)
+      await api.revokeWallet(selectedToken.tokenId, walletToRevoke.address)
       await fetchAllowlist()
     } catch (e: any) {
       console.error('Failed to revoke wallet:', e)
@@ -342,6 +349,17 @@ export default function AllowlistPage() {
         tokenId={selectedToken.tokenId}
         tokenSymbol={selectedToken.symbol}
         wallet={selectedWallet}
+      />
+
+      {/* Revoke Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!walletToRevoke}
+        onOpenChange={(open) => !open && setWalletToRevoke(null)}
+        title="Revoke Wallet"
+        description={`Are you sure you want to revoke ${walletToRevoke?.address.slice(0, 8)}...${walletToRevoke?.address.slice(-4)}? This wallet will no longer be able to hold or transfer tokens.`}
+        confirmLabel="Revoke"
+        variant="destructive"
+        onConfirm={confirmRevoke}
       />
     </div>
   )

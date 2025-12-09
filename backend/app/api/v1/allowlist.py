@@ -160,17 +160,22 @@ async def approve_wallet(request: ApproveWalletRequest, token_id: int = Path(...
     await db.refresh(wallet)
 
     # Build transaction data for on-chain approval
-    solana_client = await get_solana_client()
-    token_config_pda, _ = solana_client.derive_token_config_pda(Pubkey.from_string(token.mint_address))
-    allowlist_pda, _ = solana_client.derive_allowlist_pda(token_config_pda, wallet_pubkey)
-
-    return {
+    # Wrap in try/catch so Solana client errors don't fail the response
+    # after the wallet has already been approved in the database
+    response = {
         "message": "Wallet approved on allowlist",
         "address": wallet.address,
         "status": wallet.status,
         "kyc_level": wallet.kyc_level,
-        "allowlist_pda": str(allowlist_pda),
-        "instruction": {
+    }
+
+    try:
+        solana_client = await get_solana_client()
+        token_config_pda, _ = solana_client.derive_token_config_pda(Pubkey.from_string(token.mint_address))
+        allowlist_pda, _ = solana_client.derive_allowlist_pda(token_config_pda, wallet_pubkey)
+
+        response["allowlist_pda"] = str(allowlist_pda)
+        response["instruction"] = {
             "program": str(solana_client.program_addresses.token),
             "action": "update_allowlist",
             "data": {
@@ -179,7 +184,12 @@ async def approve_wallet(request: ApproveWalletRequest, token_id: int = Path(...
                 "kyc_level": request.kyc_level,
             }
         }
-    }
+    except Exception:
+        # Solana client error - wallet is still approved in DB
+        # Just omit the on-chain instruction data from response
+        pass
+
+    return response
 
 
 @router.post("/revoke")
@@ -217,16 +227,20 @@ async def revoke_wallet(request: ApproveWalletRequest, token_id: int = Path(...)
     await db.commit()
 
     # Build transaction data
-    solana_client = await get_solana_client()
-    token_config_pda, _ = solana_client.derive_token_config_pda(Pubkey.from_string(token.mint_address))
-    allowlist_pda, _ = solana_client.derive_allowlist_pda(token_config_pda, wallet_pubkey)
-
-    return {
+    # Wrap in try/catch so Solana client errors don't fail the response
+    response = {
         "message": "Wallet revoked from allowlist",
         "address": wallet.address,
         "status": wallet.status,
-        "allowlist_pda": str(allowlist_pda),
-        "instruction": {
+    }
+
+    try:
+        solana_client = await get_solana_client()
+        token_config_pda, _ = solana_client.derive_token_config_pda(Pubkey.from_string(token.mint_address))
+        allowlist_pda, _ = solana_client.derive_allowlist_pda(token_config_pda, wallet_pubkey)
+
+        response["allowlist_pda"] = str(allowlist_pda)
+        response["instruction"] = {
             "program": str(solana_client.program_addresses.token),
             "action": "update_allowlist",
             "data": {
@@ -235,7 +249,11 @@ async def revoke_wallet(request: ApproveWalletRequest, token_id: int = Path(...)
                 "kyc_level": 0,
             }
         }
-    }
+    except Exception:
+        # Solana client error - wallet is still revoked in DB
+        pass
+
+    return response
 
 
 @router.post("/bulk-approve")
