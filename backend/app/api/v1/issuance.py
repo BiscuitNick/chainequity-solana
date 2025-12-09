@@ -17,9 +17,12 @@ from app.schemas.issuance import (
     IssueTokensTransactionResponse,
 )
 from app.services.solana_client import get_solana_client
+from app.services.history import HistoryService
 from solders.pubkey import Pubkey
+import structlog
 
 router = APIRouter()
+logger = structlog.get_logger()
 
 
 async def _update_balance(db: AsyncSession, token_id: int, wallet: str, amount: int):
@@ -64,15 +67,21 @@ async def list_issuances(
 async def get_recent_issuances(
     token_id: int = Path(...),
     limit: int = 10,
+    max_slot: int = None,
     db: AsyncSession = Depends(get_db)
 ):
-    """Get most recent issuances for a token (for dashboard)"""
-    result = await db.execute(
-        select(TokenIssuance)
-        .where(TokenIssuance.token_id == token_id)
-        .order_by(TokenIssuance.created_at.desc())
-        .limit(limit)
-    )
+    """Get most recent issuances for a token (for dashboard).
+
+    If max_slot is provided, only returns issuances with slot <= max_slot.
+    """
+    query = select(TokenIssuance).where(TokenIssuance.token_id == token_id)
+
+    if max_slot is not None:
+        query = query.where(TokenIssuance.slot <= max_slot)
+
+    query = query.order_by(TokenIssuance.created_at.desc()).limit(limit)
+
+    result = await db.execute(query)
     issuances = result.scalars().all()
 
     return [_issuance_to_response(i) for i in issuances]
@@ -194,6 +203,18 @@ async def issue_tokens(
 
     await db.commit()
     await db.refresh(issuance)
+
+    # Auto-create snapshot after token issuance
+    try:
+        history_service = HistoryService(db)
+        await history_service.create_snapshot(
+            token_id=token_id,
+            trigger=f"token_issuance:{issuance.id}",
+            slot=current_slot,
+        )
+        await db.commit()
+    except Exception as e:
+        logger.warning("Failed to create auto-snapshot after token issuance", error=str(e))
 
     return {
         "message": f"Successfully issued {request.amount} tokens to {request.recipient}",

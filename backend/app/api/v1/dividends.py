@@ -18,8 +18,12 @@ from app.schemas.dividend import (
     DistributionProgressResponse,
 )
 from solders.pubkey import Pubkey
+from app.services.history import HistoryService
+from app.services.solana_client import get_solana_client
+import structlog
 
 router = APIRouter()
+logger = structlog.get_logger()
 
 # Configuration
 BATCH_SIZE = 25  # Number of transfers per transaction (safe limit for Solana compute)
@@ -243,6 +247,20 @@ async def create_dividend_round(
 
     await db.commit()
     await db.refresh(new_round)
+
+    # Auto-create snapshot after dividend round creation
+    try:
+        solana_client = await get_solana_client()
+        current_slot = await solana_client.get_slot()
+        history_service = HistoryService(db)
+        await history_service.create_snapshot(
+            token_id=token_id,
+            trigger=f"dividend_round:{new_round.id}",
+            slot=current_slot,
+        )
+        await db.commit()
+    except Exception as e:
+        logger.warning("Failed to create auto-snapshot after dividend creation", error=str(e))
 
     # Process distributions in background using asyncio.create_task
     asyncio.create_task(process_distributions(new_round.id, token_id))

@@ -99,22 +99,28 @@ async def get_transfer_stats(
 async def get_recent_transfers(
     token_id: int,
     limit: int = Query(10, ge=1, le=50),
+    max_slot: int = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get most recent transfers for a token (for dashboard)"""
+    """Get most recent transfers for a token (for dashboard).
+
+    If max_slot is provided, only returns transfers with slot <= max_slot.
+    """
     # Verify token exists
     result = await db.execute(select(Token).where(Token.token_id == token_id))
     token = result.scalar_one_or_none()
     if not token:
         raise HTTPException(status_code=404, detail="Token not found")
 
-    # Get recent transfers
-    result = await db.execute(
-        select(Transfer)
-        .where(Transfer.token_id == token_id)
-        .order_by(Transfer.block_time.desc())
-        .limit(limit)
-    )
+    # Build query
+    query = select(Transfer).where(Transfer.token_id == token_id)
+
+    if max_slot is not None:
+        query = query.where(Transfer.slot <= max_slot)
+
+    query = query.order_by(Transfer.block_time.desc()).limit(limit)
+
+    result = await db.execute(query)
     transfers = result.scalars().all()
 
     return [TransferResponse.model_validate(t) for t in transfers]

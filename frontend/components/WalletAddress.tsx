@@ -23,7 +23,7 @@ export function WalletAddress({ address, className = '' }: WalletAddressProps) {
     : address
 
   return (
-    <div className={`flex items-center gap-2 ${className}`}>
+    <span className={`inline-flex items-center gap-1 ${className}`}>
       <span className="font-mono text-sm">{truncated}</span>
       <button
         onClick={(e) => {
@@ -39,6 +39,6 @@ export function WalletAddress({ address, className = '' }: WalletAddressProps) {
           <Copy className="h-3.5 w-3.5 text-muted-foreground" />
         )}
       </button>
-    </div>
+    </span>
   )
 }

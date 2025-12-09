@@ -8,7 +8,12 @@ from sqlalchemy.orm import selectinload
 
 from app.models.database import get_db
 from app.models.token import Token
-from app.models.share_class import ShareClass, SharePosition
+from app.models.share_class import ShareClass, SharePosition, ShareGrant
+from app.models.wallet import Wallet
+from app.services.history import HistoryService
+import structlog
+
+logger = structlog.get_logger()
 from app.schemas.investment import (
     CreateShareClassRequest,
     ShareClassResponse,
@@ -284,6 +289,60 @@ async def delete_share_class(
     return {"message": f"Share class '{share_class.symbol}' deleted successfully"}
 
 
+@router.get("/positions/recent", response_model=List[SharePositionResponse])
+async def get_recent_share_positions(
+    token_id: int = Path(...),
+    limit: int = 10,
+    max_slot: int = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get recent share grant transactions for a token.
+
+    Returns individual grant transactions (not aggregated positions),
+    ordered by most recently created. Useful for activity feeds.
+
+    If max_slot is provided, only returns grants with slot <= max_slot.
+    """
+    # Verify token exists
+    result = await db.execute(
+        select(Token).where(Token.token_id == token_id)
+    )
+    token = result.scalar_one_or_none()
+    if not token:
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    # Build query for share grants
+    query = select(ShareGrant).options(selectinload(ShareGrant.share_class)).where(ShareGrant.token_id == token_id)
+
+    # Filter by max_slot if provided
+    if max_slot is not None:
+        query = query.where(ShareGrant.slot <= max_slot)
+
+    query = query.order_by(ShareGrant.created_at.desc()).limit(limit)
+
+    result = await db.execute(query)
+    grants = result.scalars().all()
+
+    current_price = token.current_price_per_share or 0
+
+    return [
+        SharePositionResponse(
+            id=g.id,
+            wallet=g.wallet,
+            share_class=_build_share_class_response(g.share_class) if g.share_class else None,
+            shares=g.shares,
+            cost_basis=g.cost_basis,
+            price_per_share=g.price_per_share,
+            current_value=g.shares * current_price,
+            preference_amount=int(g.cost_basis * g.share_class.preference_multiple) if g.share_class else g.cost_basis,
+            slot=g.slot,
+            acquired_at=g.created_at,
+        )
+        for g in grants
+    ]
+
+
 @router.post("/issue", response_model=IssueSharesResponse)
 async def issue_shares(
     request: IssueSharesRequest,
@@ -298,6 +357,7 @@ async def issue_shares(
     - Number of shares issued
     - Cost basis (what was paid, 0 for grants)
     - Price per share at issuance
+    - Current Solana slot for historical tracking
 
     Use this for:
     - Founder share grants (cost_basis = 0)
@@ -305,6 +365,8 @@ async def issue_shares(
     - Employee equity grants
     - Converting investments to shares
     """
+    from app.services.solana_client import get_solana_client
+
     # Verify token exists
     result = await db.execute(
         select(Token).where(Token.token_id == token_id)
@@ -328,6 +390,32 @@ async def issue_shares(
     if request.shares <= 0:
         raise HTTPException(status_code=400, detail="Shares must be positive")
 
+    # Validate recipient is on allowlist with active status
+    result = await db.execute(
+        select(Wallet).where(
+            Wallet.token_id == token_id,
+            Wallet.address == request.recipient_wallet
+        )
+    )
+    wallet_entry = result.scalar_one_or_none()
+    if not wallet_entry:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Wallet {request.recipient_wallet} is not on the allowlist. Add and approve the wallet first."
+        )
+    if wallet_entry.status != "active":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Wallet {request.recipient_wallet} is on the allowlist but not approved (status: {wallet_entry.status})"
+        )
+
+    # Get current Solana slot for historical tracking
+    try:
+        solana_client = await get_solana_client()
+        current_slot = await solana_client.get_slot()
+    except Exception:
+        current_slot = None
+
     # Check if position already exists for this wallet + share class
     result = await db.execute(
         select(SharePosition).where(
@@ -339,12 +427,13 @@ async def issue_shares(
     existing_position = result.scalar_one_or_none()
 
     if existing_position:
-        # Update existing position
+        # Update existing position (aggregate balance)
         existing_position.shares += request.shares
         existing_position.cost_basis += request.cost_basis
         # Recalculate average price per share
         if existing_position.shares > 0:
             existing_position.price_per_share = existing_position.cost_basis // existing_position.shares
+        existing_position.slot = current_slot  # Update slot to latest change
         existing_position.updated_at = datetime.utcnow()
         position = existing_position
     else:
@@ -356,11 +445,42 @@ async def issue_shares(
             shares=request.shares,
             cost_basis=request.cost_basis,
             price_per_share=request.price_per_share or (request.cost_basis // request.shares if request.shares > 0 else 0),
+            slot=current_slot,
         )
         db.add(position)
 
+    # Create a ShareGrant record for this individual transaction
+    grant = ShareGrant(
+        token_id=token_id,
+        share_class_id=request.share_class_id,
+        wallet=request.recipient_wallet,
+        shares=request.shares,
+        cost_basis=request.cost_basis,
+        price_per_share=request.price_per_share or (request.cost_basis // request.shares if request.shares > 0 else 0),
+        notes=request.notes,
+        slot=current_slot,
+        status="completed",
+    )
+    db.add(grant)
+
     await db.commit()
     await db.refresh(position)
+    await db.refresh(grant)
+
+    # Auto-create snapshot after share issuance
+    try:
+        history_service = HistoryService(db)
+        await history_service.create_snapshot(
+            token_id=token_id,
+            trigger=f"share_grant:{grant.id}",
+            slot=current_slot,
+        )
+        await db.commit()
+    except Exception as e:
+        # Log but don't fail the issuance if snapshot fails
+        import structlog
+        logger = structlog.get_logger()
+        logger.warning("Failed to create auto-snapshot after share issuance", error=str(e))
 
     return IssueSharesResponse(
         id=position.id,

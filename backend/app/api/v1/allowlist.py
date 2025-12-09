@@ -8,6 +8,7 @@ from datetime import datetime
 from app.models.database import get_db
 from app.models.wallet import Wallet
 from app.models.token import Token
+from app.models.history import ChangeType
 from app.schemas.allowlist import (
     AllowlistEntryResponse,
     AddWalletRequest,
@@ -15,6 +16,7 @@ from app.schemas.allowlist import (
     BulkApproveRequest,
 )
 from app.services.solana_client import get_solana_client
+from app.services.history import HistoryService
 from solders.pubkey import Pubkey
 
 router = APIRouter()
@@ -134,6 +136,10 @@ async def approve_wallet(request: ApproveWalletRequest, token_id: int = Path(...
     )
     wallet = result.scalar_one_or_none()
 
+    # Initialize history service for tracking
+    history_service = HistoryService(db)
+    old_status = wallet.status if wallet else None
+
     if not wallet:
         # Create and approve in one step if not exists
         wallet = Wallet(
@@ -143,12 +149,35 @@ async def approve_wallet(request: ApproveWalletRequest, token_id: int = Path(...
             approved_at=datetime.utcnow(),
         )
         db.add(wallet)
+        await db.flush()  # Get the ID assigned
+
+        # Record creation
+        await history_service.record_model_change(
+            wallet,
+            ChangeType.CREATE,
+            triggered_by="api:approve_wallet",
+        )
     elif wallet.status == "active":
         raise HTTPException(status_code=400, detail="Wallet already approved")
     else:
+        # Capture old state before update
+        from app.services.history import model_to_dict
+        old_state = model_to_dict(wallet)
+
         # Update existing wallet to active
         wallet.status = "active"
         wallet.approved_at = datetime.utcnow()
+
+        # Record the update
+        await history_service.record_change(
+            entity_type="wallets",
+            entity_id=str(wallet.id),
+            change_type=ChangeType.UPDATE,
+            old_state=old_state,
+            new_state=model_to_dict(wallet),
+            token_id=token_id,
+            triggered_by="api:approve_wallet",
+        )
 
     await db.commit()
     await db.refresh(wallet)

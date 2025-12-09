@@ -605,3 +605,143 @@ async def get_enhanced_captable_by_wallet(
         holder_count=len(wallet_summaries),
         wallets=wallet_summaries,
     )
+
+
+# ==================== V2 Snapshot Endpoints ====================
+# These endpoints use the new CapTableSnapshotV2 system for full historical reconstruction
+
+from app.services.history import HistoryService
+from app.models.history import CapTableSnapshotV2
+from pydantic import BaseModel
+
+
+class SnapshotV2Response(BaseModel):
+    """Response for V2 snapshot listing."""
+    id: int
+    slot: int
+    timestamp: Optional[datetime]
+    total_supply: int
+    holder_count: int
+    total_shares: int
+    trigger: str
+
+    class Config:
+        from_attributes = True
+
+
+class SnapshotV2DetailResponse(BaseModel):
+    """Full snapshot detail response."""
+    id: int
+    slot: int
+    timestamp: Optional[datetime]
+    total_supply: int
+    holder_count: int
+    total_shares: int
+    trigger: str
+    token_state: dict
+    holders: List[dict]
+    share_positions: List[dict]
+    vesting_schedules: List[dict]
+    share_classes: List[dict]
+
+    class Config:
+        from_attributes = True
+
+
+class CreateSnapshotRequest(BaseModel):
+    """Request to create a manual snapshot."""
+    trigger: str = "manual"
+
+
+@router.post("/snapshots/v2", response_model=SnapshotV2Response)
+async def create_snapshot_v2(
+    token_id: int = Path(...),
+    request: CreateSnapshotRequest = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create a new V2 snapshot capturing complete state.
+
+    This creates a point-in-time snapshot of all relevant data:
+    - Token state (supply, paused status, etc.)
+    - All holder balances with wallet status
+    - All share positions
+    - All vesting schedules with calculated values
+    - All share class definitions
+    """
+    history_service = HistoryService(db)
+    trigger = request.trigger if request else "manual"
+
+    snapshot = await history_service.create_snapshot(token_id, trigger=trigger)
+    await db.commit()
+
+    return SnapshotV2Response(
+        id=snapshot.id,
+        slot=snapshot.slot,
+        timestamp=snapshot.block_time,
+        total_supply=snapshot.total_supply,
+        holder_count=snapshot.holder_count,
+        total_shares=snapshot.total_shares,
+        trigger=snapshot.trigger,
+    )
+
+
+@router.get("/snapshots/v2", response_model=List[SnapshotV2Response])
+async def list_snapshots_v2(
+    token_id: int = Path(...),
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+):
+    """List available V2 snapshots for a token."""
+    history_service = HistoryService(db)
+    snapshots = await history_service.list_snapshots(token_id, limit=limit)
+
+    return [
+        SnapshotV2Response(
+            id=s.id,
+            slot=s.slot,
+            timestamp=s.block_time,
+            total_supply=s.total_supply,
+            holder_count=s.holder_count,
+            total_shares=s.total_shares,
+            trigger=s.trigger,
+        )
+        for s in snapshots
+    ]
+
+
+@router.get("/snapshots/v2/{slot}", response_model=SnapshotV2DetailResponse)
+async def get_snapshot_v2_at_slot(
+    token_id: int = Path(...),
+    slot: int = Path(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get the V2 snapshot at or before a specific slot.
+
+    Returns the most recent snapshot taken at or before the specified slot,
+    allowing reconstruction of state at any historical point.
+    """
+    history_service = HistoryService(db)
+    snapshot = await history_service.get_snapshot_at_slot(token_id, slot)
+
+    if not snapshot:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No snapshot found at or before slot {slot}"
+        )
+
+    return SnapshotV2DetailResponse(
+        id=snapshot.id,
+        slot=snapshot.slot,
+        timestamp=snapshot.block_time,
+        total_supply=snapshot.total_supply,
+        holder_count=snapshot.holder_count,
+        total_shares=snapshot.total_shares,
+        trigger=snapshot.trigger,
+        token_state=snapshot.token_state,
+        holders=snapshot.holders,
+        share_positions=snapshot.share_positions,
+        vesting_schedules=snapshot.vesting_schedules,
+        share_classes=snapshot.share_classes,
+    )

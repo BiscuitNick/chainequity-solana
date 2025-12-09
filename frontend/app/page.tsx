@@ -2,97 +2,249 @@
 
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useAppStore } from '@/stores/useAppStore'
-import api, { CapTableResponse, Proposal, Transfer, TransferStatsResponse, IssuanceStatsResponse, TokenIssuance } from '@/lib/api'
+import api, { CapTableResponse, Proposal, Transfer, TransferStatsResponse, IssuanceStatsResponse, TokenIssuance, CapTableSnapshotV2Detail, SharePosition } from '@/lib/api'
 import { WalletAddress } from '@/components/WalletAddress'
+import { AlertTriangle, Copy, History, Check, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
-// Combined activity type for displaying both transfers and issuances
+// Combined activity type for displaying transfers, issuances, and share grants
 type Activity = {
   id: string
-  type: 'transfer' | 'issuance'
+  type: 'transfer' | 'issuance' | 'share_grant'
   from: string
   to: string
   amount: number
   timestamp: string
   status: string
   slot?: number
+  shareClass?: string  // For share grants
 }
+
+type ActivityFilter = 'all' | 'transfer' | 'issuance' | 'share_grant'
+
+const ITEMS_PER_PAGE = 10
 
 export default function DashboardPage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
+  const selectedSlot = useAppStore((state) => state.selectedSlot)
+  const setSelectedSlot = useAppStore((state) => state.setSelectedSlot)
   const [capTable, setCapTable] = useState<CapTableResponse | null>(null)
+  const [historicalSnapshot, setHistoricalSnapshot] = useState<CapTableSnapshotV2Detail | null>(null)
   const [proposals, setProposals] = useState<Proposal[]>([])
   const [transferStats, setTransferStats] = useState<TransferStatsResponse | null>(null)
   const [issuanceStats, setIssuanceStats] = useState<IssuanceStatsResponse | null>(null)
-  const [recentActivity, setRecentActivity] = useState<Activity[]>([])
+  const [allActivity, setAllActivity] = useState<Activity[]>([])
   const [loading, setLoading] = useState(false)
+  const [copiedSlot, setCopiedSlot] = useState<number | null>(null)
+
+  // Filter and pagination state
+  const [activityFilter, setActivityFilter] = useState<ActivityFilter>('all')
+  const [currentPage, setCurrentPage] = useState(1)
+
+  const isViewingHistorical = selectedSlot !== null
+
+  // Filter activities based on selected filter
+  const filteredActivity = activityFilter === 'all'
+    ? allActivity
+    : allActivity.filter(a => a.type === activityFilter)
+
+  // Paginate
+  const totalPages = Math.ceil(filteredActivity.length / ITEMS_PER_PAGE)
+  const paginatedActivity = filteredActivity.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  )
+
+  // Reset page when filter changes
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [activityFilter])
+
+  const copySlotToClipboard = (slot: number) => {
+    navigator.clipboard.writeText(slot.toString())
+    setCopiedSlot(slot)
+    setTimeout(() => setCopiedSlot(null), 2000)
+  }
+
+  const viewHistoricalSlot = (slot: number) => {
+    setSelectedSlot(slot)
+  }
 
   useEffect(() => {
     if (selectedToken?.tokenId === undefined || selectedToken?.tokenId === null) return
 
     const fetchData = async () => {
       setLoading(true)
+      setHistoricalSnapshot(null)
       try {
-        const [capTableData, proposalsData, transferStatsData, issuanceStatsData, transfersData, issuancesData] = await Promise.all([
-          api.getCapTable(selectedToken.tokenId),
-          api.getProposals(selectedToken.tokenId, 'active').catch(() => []),
-          api.getTransferStats(selectedToken.tokenId).catch(() => null),
-          api.getIssuanceStats(selectedToken.tokenId).catch(() => null),
-          api.getRecentTransfers(selectedToken.tokenId, 5).catch(() => []),
-          api.getRecentIssuances(selectedToken.tokenId, 5).catch(() => []),
-        ])
-        setCapTable(capTableData)
-        setProposals(proposalsData)
-        setTransferStats(transferStatsData)
-        setIssuanceStats(issuanceStatsData)
+        if (isViewingHistorical && selectedSlot !== null) {
+          // Use V2 snapshot API for historical data + fetch transactions up to that slot
+          const [snapshot, transfersData, issuancesData, sharePositionsData] = await Promise.all([
+            api.getCapTableSnapshotV2AtSlot(selectedToken.tokenId, selectedSlot),
+            api.getRecentTransfers(selectedToken.tokenId, 50, selectedSlot).catch(() => []),
+            api.getRecentIssuances(selectedToken.tokenId, 50, selectedSlot).catch(() => []),
+            api.getRecentSharePositions(selectedToken.tokenId, 50, selectedSlot).catch(() => []),
+          ])
+          setHistoricalSnapshot(snapshot)
+          // Convert snapshot to CapTableResponse format for display
+          const capTableFromSnapshot: CapTableResponse = {
+            slot: snapshot.slot,
+            timestamp: snapshot.timestamp || new Date().toISOString(),
+            total_supply: snapshot.total_supply,
+            holder_count: snapshot.holder_count,
+            holders: snapshot.holders.map((h: any) => ({
+              wallet: h.wallet,
+              balance: h.balance,
+              ownership_pct: snapshot.total_supply > 0 ? (h.balance / snapshot.total_supply) * 100 : 0,
+              vested: 0,
+              unvested: 0,
+              status: h.status || 'active',
+            })),
+          }
+          setCapTable(capTableFromSnapshot)
+          // Clear live stats when viewing historical
+          setProposals([])
+          setTransferStats(null)
+          setIssuanceStats(null)
 
-        // Combine transfers and issuances into activity feed
-        const activities: Activity[] = [
-          ...transfersData.map((t: Transfer) => ({
-            id: `transfer-${t.id}`,
-            type: 'transfer' as const,
-            from: t.from_wallet,
-            to: t.to_wallet,
-            amount: t.amount,
-            timestamp: t.block_time,
-            status: t.status,
-            slot: t.slot,
-          })),
-          ...issuancesData.map((i: TokenIssuance) => ({
-            id: `issuance-${i.id}`,
-            type: 'issuance' as const,
-            from: 'MINT',
-            to: i.recipient,
-            amount: i.amount,
-            timestamp: i.created_at,
-            status: i.status,
-            slot: i.slot,
-          })),
-        ]
+          // Build activity feed from historical transactions (up to and including the selected slot)
+          const activities: Activity[] = [
+            ...transfersData.map((t: Transfer) => ({
+              id: `transfer-${t.id}`,
+              type: 'transfer' as const,
+              from: t.from_wallet,
+              to: t.to_wallet,
+              amount: t.amount,
+              timestamp: t.block_time,
+              status: t.status,
+              slot: t.slot,
+            })),
+            ...issuancesData.map((i: TokenIssuance) => ({
+              id: `issuance-${i.id}`,
+              type: 'issuance' as const,
+              from: 'MINT',
+              to: i.recipient,
+              amount: i.amount,
+              timestamp: i.created_at,
+              status: i.status,
+              slot: i.slot,
+            })),
+            ...sharePositionsData.map((sp: SharePosition) => ({
+              id: `share-${sp.id}`,
+              type: 'share_grant' as const,
+              from: 'GRANT',
+              to: sp.wallet,
+              amount: sp.shares,
+              timestamp: sp.acquired_at || sp.acquired_date || new Date().toISOString(),
+              status: 'completed',
+              slot: sp.slot,
+              shareClass: sp.share_class?.symbol || sp.share_class?.name,
+            })),
+          ]
 
-        // Sort by timestamp descending and take top 5
-        activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-        setRecentActivity(activities.slice(0, 5))
-      } catch (error) {
-        console.error('Failed to fetch dashboard data:', error)
+          // Sort by timestamp descending
+          activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+          setAllActivity(activities)
+        } else {
+          // Live data - use current cap table (fetch more items for pagination)
+          const [capTableData, proposalsData, transferStatsData, issuanceStatsData, transfersData, issuancesData, sharePositionsData] = await Promise.all([
+            api.getCapTable(selectedToken.tokenId),
+            api.getProposals(selectedToken.tokenId, 'active').catch(() => []),
+            api.getTransferStats(selectedToken.tokenId).catch(() => null),
+            api.getIssuanceStats(selectedToken.tokenId).catch(() => null),
+            api.getRecentTransfers(selectedToken.tokenId, 50).catch(() => []),
+            api.getRecentIssuances(selectedToken.tokenId, 50).catch(() => []),
+            api.getRecentSharePositions(selectedToken.tokenId, 50).catch(() => []),
+          ])
+          setCapTable(capTableData)
+          setProposals(proposalsData)
+          setTransferStats(transferStatsData)
+          setIssuanceStats(issuanceStatsData)
+
+          // Combine transfers, token issuances, and share positions into activity feed
+          const activities: Activity[] = [
+            ...transfersData.map((t: Transfer) => ({
+              id: `transfer-${t.id}`,
+              type: 'transfer' as const,
+              from: t.from_wallet,
+              to: t.to_wallet,
+              amount: t.amount,
+              timestamp: t.block_time,
+              status: t.status,
+              slot: t.slot,
+            })),
+            ...issuancesData.map((i: TokenIssuance) => ({
+              id: `issuance-${i.id}`,
+              type: 'issuance' as const,
+              from: 'MINT',
+              to: i.recipient,
+              amount: i.amount,
+              timestamp: i.created_at,
+              status: i.status,
+              slot: i.slot,
+            })),
+            ...sharePositionsData.map((sp: SharePosition) => ({
+              id: `share-${sp.id}`,
+              type: 'share_grant' as const,
+              from: 'GRANT',
+              to: sp.wallet,
+              amount: sp.shares,
+              timestamp: sp.acquired_at || sp.acquired_date || new Date().toISOString(),
+              status: 'completed',
+              slot: sp.slot,
+              shareClass: sp.share_class?.symbol || sp.share_class?.name,
+            })),
+          ]
+
+          // Sort by timestamp descending
+          activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+          setAllActivity(activities)
+        }
+      } catch (error: any) {
+        console.error('Failed to fetch dashboard data:', error?.message || error?.detail || error)
       } finally {
         setLoading(false)
       }
     }
 
     fetchData()
-  }, [selectedToken?.tokenId])
+  }, [selectedToken?.tokenId, selectedSlot, isViewingHistorical])
 
   const activeProposalsCount = proposals.filter(p => p.status === 'active').length
   const activity24h = (transferStats?.transfers_24h ?? 0) + (issuanceStats?.issuances_24h ?? 0)
 
   return (
     <div className="space-y-6">
+      {isViewingHistorical && (
+        <Alert className="border-amber-500/50 bg-amber-500/10">
+          <AlertTriangle className="h-4 w-4 text-amber-500" />
+          <AlertDescription className="flex items-center justify-between">
+            <span className="text-amber-700 dark:text-amber-400">
+              Viewing historical data from snapshot at slot #{historicalSnapshot?.slot?.toLocaleString() || selectedSlot?.toLocaleString()}
+              {historicalSnapshot && historicalSnapshot.slot !== selectedSlot && (
+                <span className="text-xs ml-2">(nearest to requested slot #{selectedSlot?.toLocaleString()})</span>
+              )}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedSlot(null)}
+              className="ml-4 text-amber-700 border-amber-500/50 hover:bg-amber-500/20"
+            >
+              Return to Live
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground">
           {selectedToken
-            ? `Overview for ${selectedToken.symbol}`
+            ? `Overview for ${selectedToken.symbol}${isViewingHistorical ? ' (Historical)' : ''}`
             : 'Select a token to view details'}
         </p>
       </div>
@@ -149,13 +301,12 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Ownership Distribution</CardTitle>
-            <CardDescription>Token holder breakdown</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[300px]">
+      <Card>
+        <CardHeader>
+          <CardTitle>Ownership Distribution</CardTitle>
+          <CardDescription>Token holder breakdown</CardDescription>
+        </CardHeader>
+        <CardContent>
             {loading ? (
               <div className="flex items-center justify-center h-full">
                 <p className="text-muted-foreground">Loading...</p>
@@ -190,70 +341,180 @@ export default function DashboardPage() {
                 <p className="text-muted-foreground">No holders yet</p>
               </div>
             )}
-          </CardContent>
-        </Card>
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
             <CardTitle>Recent Activity</CardTitle>
             <CardDescription>Latest token movements and issuances</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[300px]">
-            {loading ? (
-              <div className="flex items-center justify-center h-full">
-                <p className="text-muted-foreground">Loading...</p>
-              </div>
-            ) : recentActivity.length > 0 ? (
-              <div className="space-y-3">
-                {recentActivity.map((activity) => (
-                  <div key={activity.id} className="flex items-center justify-between text-sm">
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs px-1.5 py-0.5 rounded ${
-                          activity.type === 'issuance'
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-blue-100 text-blue-700'
-                        }`}>
-                          {activity.type === 'issuance' ? 'MINT' : 'TRANSFER'}
-                        </span>
-                        <span className="font-mono text-xs">
-                          {activity.from === 'MINT' ? 'MINT' : <WalletAddress address={activity.from} />} → <WalletAddress address={activity.to} />
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(activity.timestamp).toLocaleString()}
-                        </span>
-                        {activity.slot !== undefined && activity.slot !== null && (
-                          <span className="text-xs text-muted-foreground">
-                            Slot #{activity.slot.toLocaleString()}
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={activityFilter}
+              onChange={(e) => setActivityFilter(e.target.value as ActivityFilter)}
+              className="text-sm border rounded px-2 py-1 bg-background"
+            >
+              <option value="all">All Activity</option>
+              <option value="transfer">Transfers</option>
+              <option value="issuance">Mints</option>
+              <option value="share_grant">Share Grants</option>
+            </select>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <p className="text-muted-foreground">Loading...</p>
+            </div>
+          ) : paginatedActivity.length > 0 ? (
+            <TooltipProvider>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-2 px-2 font-medium">Type</th>
+                      <th className="text-left py-2 px-2 font-medium">From</th>
+                      <th className="text-left py-2 px-2 font-medium">To</th>
+                      <th className="text-right py-2 px-2 font-medium">Amount</th>
+                      <th className="text-left py-2 px-2 font-medium">Date & Time</th>
+                      <th className="text-left py-2 px-2 font-medium">Slot</th>
+                      <th className="text-center py-2 px-2 font-medium">Status</th>
+                      <th className="text-center py-2 px-2 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedActivity.map((activity) => (
+                      <tr key={activity.id} className="border-b last:border-0 hover:bg-muted/50">
+                        <td className="py-2 px-2">
+                          <span className={`text-xs px-1.5 py-0.5 rounded whitespace-nowrap ${
+                            activity.type === 'issuance'
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                              : activity.type === 'share_grant'
+                              ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                          }`}>
+                            {activity.type === 'issuance' ? 'MINT' : activity.type === 'share_grant' ? 'SHARES' : 'TRANSFER'}
                           </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-medium">{activity.amount.toLocaleString()}</div>
-                      <span className={`text-xs ${
-                        activity.status === 'success' || activity.status === 'completed'
-                          ? 'text-green-600'
-                          : activity.status === 'pending'
-                          ? 'text-yellow-600'
-                          : 'text-red-600'
-                      }`}>
-                        {activity.status}
-                      </span>
-                    </div>
+                          {activity.shareClass && (
+                            <span className="text-xs text-muted-foreground ml-1">({activity.shareClass})</span>
+                          )}
+                        </td>
+                        <td className="py-2 px-2">
+                          {activity.from === 'MINT' || activity.from === 'GRANT' ? (
+                            <span className="font-mono text-xs">{activity.from}</span>
+                          ) : (
+                            <WalletAddress address={activity.from} />
+                          )}
+                        </td>
+                        <td className="py-2 px-2">
+                          <WalletAddress address={activity.to} />
+                        </td>
+                        <td className="py-2 px-2 text-right font-medium whitespace-nowrap">
+                          {activity.amount.toLocaleString()}
+                          {activity.type === 'share_grant' && <span className="text-xs ml-1 text-muted-foreground">shares</span>}
+                        </td>
+                        <td className="py-2 px-2 text-xs text-muted-foreground whitespace-nowrap">
+                          {new Date(activity.timestamp).toLocaleString()}
+                        </td>
+                        <td className="py-2 px-2">
+                          {activity.slot !== undefined && activity.slot !== null ? (
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs font-mono">#{activity.slot.toLocaleString()}</span>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    onClick={() => copySlotToClipboard(activity.slot!)}
+                                    className="p-0.5 hover:bg-muted rounded"
+                                  >
+                                    {copiedSlot === activity.slot ? (
+                                      <Check className="h-3 w-3 text-green-500" />
+                                    ) : (
+                                      <Copy className="h-3 w-3 text-muted-foreground" />
+                                    )}
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>Copy slot</TooltipContent>
+                              </Tooltip>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="py-2 px-2 text-center">
+                          <span className={`text-xs ${
+                            activity.status === 'success' || activity.status === 'completed'
+                              ? 'text-green-600'
+                              : activity.status === 'pending'
+                              ? 'text-yellow-600'
+                              : 'text-red-600'
+                          }`}>
+                            {activity.status}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2">
+                          {activity.slot !== undefined && activity.slot !== null && (
+                            <div className="flex items-center justify-center">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    onClick={() => viewHistoricalSlot(activity.slot!)}
+                                    className="p-1 hover:bg-muted rounded"
+                                  >
+                                    <History className="h-3.5 w-3.5 text-muted-foreground hover:text-primary" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>View state at this slot</TooltipContent>
+                              </Tooltip>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                  <span className="text-sm text-muted-foreground">
+                    Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1}-{Math.min(currentPage * ITEMS_PER_PAGE, filteredActivity.length)} of {filteredActivity.length}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Prev
+                    </Button>
+                    <span className="text-sm">
+                      Page {currentPage} of {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="flex items-center justify-center h-full">
-                <p className="text-muted-foreground">No recent activity</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                </div>
+              )}
+            </TooltipProvider>
+          ) : (
+            <div className="flex items-center justify-center py-8">
+              <p className="text-muted-foreground">No recent activity</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -4,23 +4,53 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/useAppStore'
-import { Download, PieChart, RefreshCw } from 'lucide-react'
-import { api, CapTableResponse, CapTableEntry } from '@/lib/api'
+import { Download, PieChart, RefreshCw, AlertTriangle } from 'lucide-react'
+import { api, CapTableResponse, CapTableEntry, CapTableSnapshotV2Detail } from '@/lib/api'
 import { WalletAddress } from '@/components/WalletAddress'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 
 export default function CapTablePage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
+  const selectedSlot = useAppStore((state) => state.selectedSlot)
+  const setSelectedSlot = useAppStore((state) => state.setSelectedSlot)
   const [capTable, setCapTable] = useState<CapTableResponse | null>(null)
+  const [historicalSnapshot, setHistoricalSnapshot] = useState<CapTableSnapshotV2Detail | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const isViewingHistorical = selectedSlot !== null
 
   const fetchCapTable = async () => {
     if (!selectedToken) return
     setLoading(true)
     setError(null)
+    setHistoricalSnapshot(null)
     try {
-      const data = await api.getCapTable(selectedToken.tokenId)
-      setCapTable(data)
+      if (isViewingHistorical && selectedSlot !== null) {
+        // Use V2 snapshot API for historical data
+        const snapshot = await api.getCapTableSnapshotV2AtSlot(selectedToken.tokenId, selectedSlot)
+        setHistoricalSnapshot(snapshot)
+        // Convert snapshot to CapTableResponse format for display
+        const capTableFromSnapshot: CapTableResponse = {
+          slot: snapshot.slot,
+          timestamp: snapshot.timestamp || new Date().toISOString(),
+          total_supply: snapshot.total_supply,
+          holder_count: snapshot.holder_count,
+          holders: snapshot.holders.map((h: any) => ({
+            wallet: h.wallet,
+            balance: h.balance,
+            ownership_pct: snapshot.total_supply > 0 ? (h.balance / snapshot.total_supply) * 100 : 0,
+            vested: 0,
+            unvested: 0,
+            status: h.status || 'active',
+          })),
+        }
+        setCapTable(capTableFromSnapshot)
+      } else {
+        // Live data - use current cap table
+        const data = await api.getCapTable(selectedToken.tokenId)
+        setCapTable(data)
+      }
     } catch (e: any) {
       console.error('Failed to fetch cap table:', e)
       setError(e.detail || 'Failed to fetch cap table')
@@ -50,7 +80,7 @@ export default function CapTablePage() {
 
   useEffect(() => {
     fetchCapTable()
-  }, [selectedToken])
+  }, [selectedToken, selectedSlot])
 
   const holders = capTable?.holders || []
   const totalSupply = capTable?.total_supply || 0
@@ -72,11 +102,34 @@ export default function CapTablePage() {
 
   return (
     <div className="space-y-6">
+      {isViewingHistorical && (
+        <Alert className="border-amber-500/50 bg-amber-500/10">
+          <AlertTriangle className="h-4 w-4 text-amber-500" />
+          <AlertDescription className="flex items-center justify-between">
+            <span className="text-amber-700 dark:text-amber-400">
+              Viewing historical data from snapshot at slot #{historicalSnapshot?.slot?.toLocaleString() || selectedSlot?.toLocaleString()}
+              {historicalSnapshot && historicalSnapshot.slot !== selectedSlot && (
+                <span className="text-xs ml-2">(nearest to requested slot #{selectedSlot?.toLocaleString()})</span>
+              )}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedSlot(null)}
+              className="ml-4 text-amber-700 border-amber-500/50 hover:bg-amber-500/20"
+            >
+              Return to Live
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Cap Table</h1>
           <p className="text-muted-foreground">
             Ownership distribution for {selectedToken.symbol}
+            {isViewingHistorical && ' (Historical)'}
           </p>
         </div>
         <div className="flex gap-2">
@@ -131,13 +184,15 @@ export default function CapTablePage() {
             </p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className={isViewingHistorical ? 'border-amber-500/50' : ''}>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Slot</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{loading ? '...' : capTable?.slot?.toLocaleString() || '—'}</div>
-            <p className="text-xs text-muted-foreground">latest snapshot</p>
+            <p className="text-xs text-muted-foreground">
+              {isViewingHistorical ? 'historical snapshot' : 'latest snapshot'}
+            </p>
           </CardContent>
         </Card>
       </div>

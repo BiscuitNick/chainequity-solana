@@ -61,6 +61,7 @@ class ShareClassResponse(BaseModel):
 
 class SharePositionResponse(BaseModel):
     """A holder's position in a share class"""
+    id: Optional[int] = None
     wallet: str
     share_class: ShareClassResponse
     shares: int
@@ -68,6 +69,8 @@ class SharePositionResponse(BaseModel):
     price_per_share: int  # In cents
     current_value: int  # shares * current_price_per_share
     preference_amount: int  # cost_basis * preference_multiple
+    slot: Optional[int] = None  # Solana slot at time of issuance
+    acquired_at: Optional[datetime] = None
 
 
 # =============================================================================

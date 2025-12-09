@@ -60,6 +60,16 @@ class ApiClient {
     return this.request<{ status: string; version: string; cluster: string }>('/health')
   }
 
+  // Get current Solana slot (endpoint is at root, not under /api/v1)
+  async getCurrentSlot() {
+    const url = this.baseUrl.replace('/api/v1', '') + '/slot'
+    const response = await fetch(url)
+    if (!response.ok) {
+      throw new Error('Failed to fetch current slot')
+    }
+    return response.json() as Promise<{ slot: number | null; cluster: string; error?: string }>
+  }
+
   // Factory endpoints
   async getFactoryInfo() {
     return this.request<any>('/factory/info')
@@ -130,8 +140,12 @@ class ApiClient {
     return this.request<TokenIssuance[]>(`/tokens/${tokenId}/issuance`)
   }
 
-  async getRecentIssuances(tokenId: number, limit = 10) {
-    return this.request<TokenIssuance[]>(`/tokens/${tokenId}/issuance/recent?limit=${limit}`)
+  async getRecentIssuances(tokenId: number, limit = 10, maxSlot?: number) {
+    let url = `/tokens/${tokenId}/issuance/recent?limit=${limit}`
+    if (maxSlot !== undefined) {
+      url += `&max_slot=${maxSlot}`
+    }
+    return this.request<TokenIssuance[]>(url)
   }
 
   async getIssuanceStats(tokenId: number) {
@@ -153,8 +167,31 @@ class ApiClient {
   }
 
   // Cap Table endpoints
-  async getCapTable(tokenId: number) {
+  async getCapTable(tokenId: number, slot?: number) {
+    if (slot !== undefined) {
+      return this.request<CapTableResponse>(`/tokens/${tokenId}/captable/at/${slot}`)
+    }
     return this.request<CapTableResponse>(`/tokens/${tokenId}/captable`)
+  }
+
+  async getCapTableSnapshots(tokenId: number) {
+    return this.request<CapTableSnapshot[]>(`/tokens/${tokenId}/captable/snapshots`)
+  }
+
+  // V2 Snapshot endpoints (full historical reconstruction)
+  async getCapTableSnapshotsV2(tokenId: number, limit = 100) {
+    return this.request<CapTableSnapshotV2[]>(`/tokens/${tokenId}/captable/snapshots/v2?limit=${limit}`)
+  }
+
+  async getCapTableSnapshotV2AtSlot(tokenId: number, slot: number) {
+    return this.request<CapTableSnapshotV2Detail>(`/tokens/${tokenId}/captable/snapshots/v2/${slot}`)
+  }
+
+  async createCapTableSnapshotV2(tokenId: number, trigger = 'manual') {
+    return this.request<CapTableSnapshotV2>(`/tokens/${tokenId}/captable/snapshots/v2`, {
+      method: 'POST',
+      body: JSON.stringify({ trigger }),
+    })
   }
 
   async exportCapTable(tokenId: number, format: 'csv' | 'pdf' = 'csv') {
@@ -171,8 +208,12 @@ class ApiClient {
     return this.request<TransferStatsResponse>(`/tokens/${tokenId}/transfers/stats`)
   }
 
-  async getRecentTransfers(tokenId: number, limit = 10) {
-    return this.request<Transfer[]>(`/tokens/${tokenId}/transfers/recent?limit=${limit}`)
+  async getRecentTransfers(tokenId: number, limit = 10, maxSlot?: number) {
+    let url = `/tokens/${tokenId}/transfers/recent?limit=${limit}`
+    if (maxSlot !== undefined) {
+      url += `&max_slot=${maxSlot}`
+    }
+    return this.request<Transfer[]>(url)
   }
 
   // Vesting endpoints
@@ -341,6 +382,14 @@ class ApiClient {
 
   async getSharePositions(tokenId: number, shareClassId: number) {
     return this.request<SharePosition[]>(`/tokens/${tokenId}/share-classes/${shareClassId}/positions`)
+  }
+
+  async getRecentSharePositions(tokenId: number, limit = 10, maxSlot?: number) {
+    let url = `/tokens/${tokenId}/share-classes/positions/recent?limit=${limit}`
+    if (maxSlot !== undefined) {
+      url += `&max_slot=${maxSlot}`
+    }
+    return this.request<SharePosition[]>(url)
   }
 
   async issueShares(tokenId: number, data: IssueSharesRequest) {
@@ -567,6 +616,30 @@ export interface CapTableResponse {
   total_supply: number
   holder_count: number
   holders: CapTableEntry[]
+}
+
+export interface CapTableSnapshot {
+  slot: number
+  timestamp: string
+  holder_count: number
+}
+
+export interface CapTableSnapshotV2 {
+  id: number
+  slot: number
+  timestamp: string | null
+  total_supply: number
+  holder_count: number
+  total_shares: number
+  trigger: string
+}
+
+export interface CapTableSnapshotV2Detail extends CapTableSnapshotV2 {
+  token_state: Record<string, any>
+  holders: Array<{ wallet: string; balance: number; status: string }>
+  share_positions: Array<Record<string, any>>
+  vesting_schedules: Array<Record<string, any>>
+  share_classes: Array<Record<string, any>>
 }
 
 export interface Transfer {
@@ -814,7 +887,9 @@ export interface SharePosition {
   price_per_share: number
   current_value?: number
   preference_amount?: number
+  slot?: number  // Solana slot at time of issuance
   acquired_date?: string
+  acquired_at?: string  // Backend uses this name
   funding_round_id?: number
   notes?: string
 }

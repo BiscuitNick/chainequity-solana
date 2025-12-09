@@ -1,7 +1,37 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, BigInteger
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, BigInteger, Text
 from sqlalchemy.orm import relationship
 from app.models.database import Base
+
+
+class ShareGrant(Base):
+    """Individual share grant transaction - one record per issuance event"""
+    __tablename__ = "share_grants"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    token_id = Column(Integer, ForeignKey("tokens.token_id"), nullable=False, index=True)
+    share_class_id = Column(Integer, ForeignKey("share_classes.id"), nullable=False, index=True)
+    wallet = Column(String(44), nullable=False, index=True)
+
+    # Grant details
+    shares = Column(BigInteger, nullable=False)
+    cost_basis = Column(BigInteger, nullable=False, default=0)  # Amount paid for this grant
+    price_per_share = Column(BigInteger, nullable=False, default=0)
+    notes = Column(Text, nullable=True)
+
+    # Blockchain tracking
+    slot = Column(BigInteger, nullable=True, index=True)  # Solana slot at time of grant
+    tx_signature = Column(String(100), nullable=True)
+
+    # Status
+    status = Column(String(20), nullable=False, default="completed")
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    token = relationship("Token")
+    share_class = relationship("ShareClass")
 
 
 class ShareClass(Base):
@@ -50,6 +80,9 @@ class SharePosition(Base):
     shares = Column(BigInteger, nullable=False, default=0)
     cost_basis = Column(BigInteger, nullable=False, default=0)  # Total amount paid (in cents)
     price_per_share = Column(BigInteger, nullable=False, default=0)  # Price at acquisition (in cents)
+
+    # Slot tracking for historical state
+    slot = Column(BigInteger, nullable=True, index=True)  # Solana slot at time of creation/update
 
     # Timestamps
     acquired_at = Column(DateTime, default=datetime.utcnow)

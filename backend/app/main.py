@@ -9,7 +9,7 @@ from app.config import get_settings
 from app.api.v1.router import api_router
 from app.api.websocket import websocket_router
 from app.models.database import init_db, close_db, async_session_factory
-from app.services.solana_client import close_solana_client
+from app.services.solana_client import close_solana_client, get_solana_client
 from app.services.sync import sync_tokens_from_chain
 
 # Indexer is optional - only imported if available
@@ -109,6 +109,24 @@ def create_app() -> FastAPI:
             "version": settings.app_version,
             "cluster": settings.solana_cluster,
         }
+
+    @app.get("/slot")
+    async def get_current_slot():
+        """Get the current Solana slot number"""
+        try:
+            solana_client = await get_solana_client()
+            slot = await solana_client.get_slot()
+            return {
+                "slot": slot,
+                "cluster": settings.solana_cluster,
+            }
+        except Exception as e:
+            logger.error("Failed to get current slot", error=str(e))
+            return {
+                "slot": None,
+                "cluster": settings.solana_cluster,
+                "error": str(e),
+            }
 
     return app
 

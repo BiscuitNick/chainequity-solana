@@ -14,6 +14,9 @@ from app.models.funding_round import FundingRound, Investment
 from app.models.convertible import ConvertibleInstrument
 from app.models.valuation import ValuationEvent
 
+# Historical state tracking
+from app.models.history import StateChange, ChangeType, CapTableSnapshotV2
+
 __all__ = [
     "Base",
     "get_db",
@@ -36,4 +39,8 @@ __all__ = [
     "Investment",
     "ConvertibleInstrument",
     "ValuationEvent",
+    # Historical tracking
+    "StateChange",
+    "ChangeType",
+    "CapTableSnapshotV2",
 ]
