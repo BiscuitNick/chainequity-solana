@@ -133,9 +133,9 @@ export default function DashboardPage() {
       from = 'VESTING'
       to = tx.wallet || ''
     } else if (tx.tx_type === 'dividend_payment') {
-      // For dividend payment, show DIVIDEND as source and recipient wallet as 'to'
-      from = 'DIVIDEND'
-      to = tx.wallet || ''
+      // For dividend payment, show issuer wallet as 'from' and recipient wallet as 'to'
+      from = tx.wallet || ''  // Payment token / issuer wallet
+      to = tx.wallet_to || ''  // Shareholder receiving dividend
     } else if (tx.tx_type === 'approval' || tx.tx_type === 'revocation') {
       to = tx.wallet || ''
     }
@@ -540,7 +540,7 @@ export default function DashboardPage() {
                               <span className="text-muted-foreground">—</span>
                             ) : activity.type === 'stock_split' ? (
                               <span className="font-mono text-xs font-medium">{activity.splitDenominator || activity.from}</span>
-                            ) : ['GRANT', 'INVESTMENT', 'CONVERT', 'VESTING', 'DIVIDEND'].includes(activity.from) ? (
+                            ) : ['GRANT', 'INVESTMENT', 'CONVERT', 'VESTING'].includes(activity.from) ? (
                               <span className="font-mono text-xs">{activity.from}</span>
                             ) : activity.from ? (
                               <WalletAddress address={activity.from} />
@@ -560,11 +560,11 @@ export default function DashboardPage() {
                             )}
                           </td>
                           <td className="py-2 px-2 text-right font-medium whitespace-nowrap">
-                            {/* For dividends, show shares_held from data; otherwise show amount */}
+                            {/* For dividends, show shares_held from data or amountSecondary; otherwise show amount */}
                             {!isFieldRelevant(activity, 'amount') ? (
                               <span className="text-muted-foreground">—</span>
                             ) : activity.type === 'dividend_payment' ? (
-                              activity.data?.shares_held?.toLocaleString() ?? <span className="text-muted-foreground">—</span>
+                              (activity.data?.shares_held || activity.amountSecondary)?.toLocaleString() ?? <span className="text-muted-foreground">—</span>
                             ) : activity.amount !== null && activity.amount !== undefined ? (
                               activity.amount.toLocaleString()
                             ) : (

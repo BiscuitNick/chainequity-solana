@@ -324,20 +324,23 @@ async def process_distributions(round_id: int, token_id: int):
                         payment.signature = f"demo_sig_{round_id}_{payment.id}"
 
                         # Create unified transaction for this payment
+                        # Convert amount_per_share to cents for frontend consistency
+                        amount_per_share_cents = int(round_obj.amount_per_share * 100)
                         unified_tx = UnifiedTransaction(
                             token_id=token_id,
                             slot=current_slot,
                             tx_type=TransactionType.DIVIDEND_PAYMENT,
-                            wallet=round_obj.payment_token,  # From (payment token)
+                            wallet=round_obj.payment_token,  # From (payment token/issuer wallet)
                             wallet_to=payment.wallet,  # To (shareholder)
                             amount=payment.amount,
+                            amount_secondary=payment.shares,  # Store shares held for display
                             reference_id=round_id,
                             reference_type="dividend_round",
                             tx_signature=payment.signature,
                             data={
                                 "round_number": round_obj.round_number,
-                                "shares": payment.shares,
-                                "dividend_per_share": round_obj.amount_per_share,
+                                "shares_held": payment.shares,  # Frontend expects shares_held
+                                "amount_per_share": amount_per_share_cents,  # In cents for frontend
                                 "payment_token": round_obj.payment_token,
                             },
                             notes=f"Dividend payment from round #{round_obj.round_number}",
@@ -458,6 +461,8 @@ async def retry_distributions(round_id: int):
                     payment.signature = f"retry_sig_{round_id}_{payment.id}"
 
                     # Create unified transaction for retry payment
+                    # Convert amount_per_share to cents for frontend consistency
+                    amount_per_share_cents = int(round_obj.amount_per_share * 100)
                     unified_tx = UnifiedTransaction(
                         token_id=round_obj.token_id,
                         slot=current_slot,
@@ -465,13 +470,14 @@ async def retry_distributions(round_id: int):
                         wallet=round_obj.payment_token,
                         wallet_to=payment.wallet,
                         amount=payment.amount,
+                        amount_secondary=payment.shares,  # Store shares held for display
                         reference_id=round_id,
                         reference_type="dividend_round",
                         tx_signature=payment.signature,
                         data={
                             "round_number": round_obj.round_number,
-                            "shares": payment.shares,
-                            "dividend_per_share": round_obj.amount_per_share,
+                            "shares_held": payment.shares,  # Frontend expects shares_held
+                            "amount_per_share": amount_per_share_cents,  # In cents for frontend
                             "payment_token": round_obj.payment_token,
                             "retry": True,
                         },
