@@ -17,6 +17,7 @@ class RoundType(str, Enum):
     SERIES_B = "series_b"
     SERIES_C = "series_c"
     BRIDGE = "bridge"
+    REVALUATION = "revaluation"  # Zero-dollar round to change company valuation
     OTHER = "other"
 
 
@@ -268,8 +269,9 @@ class WaterfallPayoutResponse(BaseModel):
     shares: int
     cost_basis: int
     preference_amount: int
+    preference_multiple: float
     payout: int
-    payout_source: str  # "preference", "partial_preference", "none"
+    payout_source: str  # "preference", "partial_preference", "conversion", "common", "none"
 
 
 class WaterfallTierResponse(BaseModel):

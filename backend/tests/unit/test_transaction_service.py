@@ -347,6 +347,54 @@ class TestTransactionServiceApplyTransaction:
 
         assert state.vesting_schedules[1].is_terminated is True
 
+    def test_apply_investment(self):
+        """Test applying INVESTMENT transaction (funding round investment)."""
+        state = TokenState(slot=100)
+
+        tx = MagicMock()
+        tx.tx_type = TransactionType.INVESTMENT
+        tx.wallet = "investor1"
+        tx.amount = 500000  # shares received
+        tx.amount_secondary = 100000000  # $1M cost basis (in cents)
+        tx.share_class_id = 2  # Series A preferred
+        tx.priority = 1
+        tx.preference_multiple = 1.0
+
+        service = TransactionService(MagicMock())
+        service._apply_transaction(state, tx)
+
+        # Shares added to balance and position
+        assert state.balances["investor1"] == 500000
+        assert state.total_supply == 500000
+        assert ("investor1", 2) in state.positions
+        assert state.positions[("investor1", 2)].shares == 500000
+        assert state.positions[("investor1", 2)].cost_basis == 100000000
+        assert state.positions[("investor1", 2)].priority == 1
+        assert state.positions[("investor1", 2)].preference_multiple == 1.0
+
+    def test_apply_convertible_convert(self):
+        """Test applying CONVERTIBLE_CONVERT transaction."""
+        state = TokenState(slot=100)
+
+        tx = MagicMock()
+        tx.tx_type = TransactionType.CONVERTIBLE_CONVERT
+        tx.wallet = "safe_holder1"
+        tx.amount = 312500  # shares received from SAFE conversion
+        tx.amount_secondary = 25000000  # $250K principal (in cents)
+        tx.share_class_id = 2  # Series A preferred
+        tx.priority = 1
+        tx.preference_multiple = 1.0
+
+        service = TransactionService(MagicMock())
+        service._apply_transaction(state, tx)
+
+        # Shares added to balance and position
+        assert state.balances["safe_holder1"] == 312500
+        assert state.total_supply == 312500
+        assert ("safe_holder1", 2) in state.positions
+        assert state.positions[("safe_holder1", 2)].shares == 312500
+        assert state.positions[("safe_holder1", 2)].cost_basis == 25000000
+
     def test_governance_transactions_dont_affect_balances(self):
         """Test that governance transactions don't modify holder balances."""
         state = TokenState(slot=100)

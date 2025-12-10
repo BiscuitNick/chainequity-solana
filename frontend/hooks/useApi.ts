@@ -13,7 +13,6 @@ import api, {
   Proposal,
   MultiSigConfigResponse,
   PendingTransactionResponse,
-  CapTableSnapshot,
 } from '@/lib/api'
 import { useAppStore } from '@/stores/useAppStore'
 
@@ -93,32 +92,6 @@ export function useHolders(tokenId: number | null) {
     async () => {
       if (tokenId === null || tokenId === undefined) return []
       return api.getHolders(tokenId)
-    },
-    [tokenId]
-  )
-}
-
-// Cap Table Snapshots hook
-export function useCapTableSnapshots(tokenId: number | null) {
-  const setAvailableSnapshots = useAppStore((state) => state.setAvailableSnapshots)
-  const setCurrentSlot = useAppStore((state) => state.setCurrentSlot)
-
-  return useApiCall<CapTableSnapshot[]>(
-    async () => {
-      if (tokenId === null || tokenId === undefined) return []
-      const snapshots = await api.getCapTableSnapshots(tokenId)
-      // Transform to app store format
-      const appSnapshots = snapshots.map((s) => ({
-        slot: s.slot,
-        timestamp: s.timestamp,
-        holderCount: s.holder_count,
-      }))
-      setAvailableSnapshots(appSnapshots)
-      // Set current slot to the most recent snapshot
-      if (snapshots.length > 0) {
-        setCurrentSlot(snapshots[0].slot)
-      }
-      return snapshots
     },
     [tokenId]
   )

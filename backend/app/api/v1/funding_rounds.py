@@ -1,7 +1,8 @@
 """Funding Rounds API endpoints"""
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Path
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
@@ -13,6 +14,8 @@ from app.models.funding_round import FundingRound, Investment
 from app.models.valuation import ValuationEvent
 from app.models.wallet import Wallet
 from app.models.snapshot import CurrentBalance
+from app.models.unified_transaction import TransactionType
+from app.services.transaction_service import TransactionService
 from app.schemas.investment import (
     CreateFundingRoundRequest,
     AddInvestmentRequest,
@@ -347,6 +350,7 @@ async def close_funding_round(
     3. Add investors to allowlist if not already on it
     4. Update token's total supply and valuation
     5. Create a valuation event
+    6. Record transactions for each investment
     """
     # Get funding round with all relationships
     result = await db.execute(
@@ -370,7 +374,8 @@ async def close_funding_round(
             detail=f"Round is already {funding_round.status}"
         )
 
-    if not funding_round.investments:
+    # For revaluation rounds, we don't need investments
+    if funding_round.round_type != "revaluation" and not funding_round.investments:
         raise HTTPException(status_code=400, detail="No investments to close")
 
     # Get token
@@ -380,9 +385,15 @@ async def close_funding_round(
     token = result.scalar_one()
 
     share_class = funding_round.share_class
+    transaction_service = TransactionService(db)
 
     # Issue shares to each investor
-    for investment in funding_round.investments:
+    for investment in funding_round.investments or []:
+        # Skip investments that are already completed (e.g., from SAFE/Note conversions)
+        # These were already processed and recorded as CONVERTIBLE_CONVERT transactions
+        if investment.status == "completed":
+            continue
+
         # Check if wallet is on allowlist, add if not
         result = await db.execute(
             select(Wallet).where(
@@ -456,18 +467,46 @@ async def close_funding_round(
 
         investment.status = "completed"
 
-    # Update token total supply
-    token.total_supply = (token.total_supply or 0) + funding_round.shares_issued
+        # Record investment transaction
+        await transaction_service.record(
+            token_id=token_id,
+            tx_type=TransactionType.INVESTMENT,
+            wallet=investment.investor_wallet,
+            amount=investment.shares_received,
+            amount_secondary=investment.amount,  # cost basis
+            share_class_id=share_class.id,
+            priority=share_class.priority,
+            preference_multiple=share_class.preference_multiple,
+            price_per_share=investment.price_per_share,
+            reference_id=funding_round.id,
+            reference_type="funding_round",
+            data={
+                "funding_round_id": funding_round.id,
+                "funding_round_name": funding_round.name,
+                "round_type": funding_round.round_type,
+                "investor_name": investment.investor_name,
+                "share_class_name": share_class.name,
+                "share_class_symbol": share_class.symbol,
+            },
+            notes=f"Investment in {funding_round.name}: {investment.shares_received:,} shares for ${investment.amount / 100:,.2f}",
+        )
+
+    # Update token total supply (only if shares were issued)
+    if funding_round.shares_issued > 0:
+        token.total_supply = (token.total_supply or 0) + funding_round.shares_issued
 
     # Update token valuation
     token.current_valuation = funding_round.post_money_valuation
     token.current_price_per_share = funding_round.price_per_share
     token.last_valuation_date = datetime.utcnow()
 
+    # Determine event type for valuation event
+    event_type = "revaluation" if funding_round.round_type == "revaluation" else "funding_round"
+
     # Create valuation event
     valuation_event = ValuationEvent(
         token_id=token_id,
-        event_type="funding_round",
+        event_type=event_type,
         valuation=funding_round.post_money_valuation,
         price_per_share=funding_round.price_per_share,
         fully_diluted_shares=token.total_supply,
@@ -476,6 +515,29 @@ async def close_funding_round(
         notes=f"Closed {funding_round.name}",
     )
     db.add(valuation_event)
+
+    # Record funding round close transaction
+    await transaction_service.record(
+        token_id=token_id,
+        tx_type=TransactionType.FUNDING_ROUND_CLOSE,
+        amount=funding_round.amount_raised,
+        amount_secondary=funding_round.shares_issued,
+        share_class_id=share_class.id if share_class else None,
+        price_per_share=funding_round.price_per_share,
+        reference_id=funding_round.id,
+        reference_type="funding_round",
+        data={
+            "funding_round_id": funding_round.id,
+            "funding_round_name": funding_round.name,
+            "round_type": funding_round.round_type,
+            "pre_money_valuation": funding_round.pre_money_valuation,
+            "amount_raised": funding_round.amount_raised,
+            "post_money_valuation": funding_round.post_money_valuation,
+            "shares_issued": funding_round.shares_issued,
+            "investor_count": len(funding_round.investments or []),
+        },
+        notes=f"Closed {funding_round.name}: {len(funding_round.investments or [])} investors, ${funding_round.amount_raised / 100:,.2f} raised",
+    )
 
     # Update round status
     funding_round.status = "completed"

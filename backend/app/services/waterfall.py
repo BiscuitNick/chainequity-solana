@@ -39,6 +39,7 @@ class WaterfallPayout:
     shares: int
     cost_basis: int
     preference_amount: int
+    preference_multiple: float
     payout: int
     payout_source: str  # "preference", "conversion", "common", "partial_preference", or "none"
 
@@ -91,6 +92,7 @@ class WaterfallResult:
                             "shares": p.shares,
                             "cost_basis": p.cost_basis,
                             "preference_amount": p.preference_amount,
+                            "preference_multiple": p.preference_multiple,
                             "payout": p.payout,
                             "payout_source": p.payout_source,
                         }
@@ -164,6 +166,7 @@ def calculate_waterfall(
                         shares=pos.shares,
                         cost_basis=pos.cost_basis,
                         preference_amount=pos.preference_amount,
+                        preference_multiple=pos.preference_multiple,
                         payout=0,
                         payout_source="none",
                     ))
@@ -186,6 +189,7 @@ def calculate_waterfall(
                         shares=pos.shares,
                         cost_basis=pos.cost_basis,
                         preference_amount=pos.preference_amount,
+                        preference_multiple=pos.preference_multiple,
                         payout=pos.preference_amount,
                         payout_source="preference",
                     ))
@@ -206,6 +210,7 @@ def calculate_waterfall(
                         shares=pos.shares,
                         cost_basis=pos.cost_basis,
                         preference_amount=pos.preference_amount,
+                        preference_multiple=pos.preference_multiple,
                         payout=payout,
                         payout_source="partial_preference",
                     ))
@@ -320,6 +325,7 @@ def calculate_waterfall(
                 shares=pos.shares,
                 cost_basis=pos.cost_basis,
                 preference_amount=pos.preference_amount,
+                preference_multiple=pos.preference_multiple,
                 payout=payout,
                 payout_source=source,
             ))

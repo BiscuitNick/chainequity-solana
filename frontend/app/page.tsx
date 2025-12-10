@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useAppStore } from '@/stores/useAppStore'
 import api, { CapTableResponse, Proposal, TransferStatsResponse, IssuanceStatsResponse, UnifiedTransaction, ReconstructedState } from '@/lib/api'
 import { WalletAddress } from '@/components/WalletAddress'
+import { OwnershipDistribution } from '@/components/OwnershipDistribution'
 import { AlertTriangle, Copy, History, Check, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -29,7 +30,7 @@ type Activity = {
   splitDenominator?: number
 }
 
-type ActivityFilter = 'all' | 'transfer' | 'mint' | 'share_grant' | 'approval' | 'other'
+type ActivityFilter = 'all' | 'transfer' | 'mint' | 'share_grant' | 'approval' | 'convertible_convert' | 'dividend_payment' | 'vesting_release' | 'stock_split' | 'funding_round' | 'other'
 
 const ITEMS_PER_PAGE = 10
 
@@ -54,10 +55,13 @@ export default function DashboardPage() {
   const isViewingHistorical = selectedSlot !== null
 
   // Filter activities based on selected filter
+  const knownTypes = ['transfer', 'mint', 'share_grant', 'approval', 'convertible_convert', 'dividend_payment', 'vesting_release', 'stock_split', 'funding_round_create', 'funding_round_close']
   const filteredActivity = activityFilter === 'all'
     ? allActivity
     : activityFilter === 'other'
-    ? allActivity.filter(a => !['transfer', 'mint', 'share_grant', 'approval'].includes(a.type))
+    ? allActivity.filter(a => !knownTypes.includes(a.type))
+    : activityFilter === 'funding_round'
+    ? allActivity.filter(a => a.type === 'funding_round_create' || a.type === 'funding_round_close')
     : allActivity.filter(a => a.type === activityFilter)
 
   // Paginate
@@ -103,10 +107,22 @@ export default function DashboardPage() {
     if (tx.tx_type === 'mint' || tx.tx_type === 'share_grant') {
       from = tx.tx_type === 'mint' ? 'MINT' : 'GRANT'
       to = tx.wallet || ''
+    } else if (tx.tx_type === 'convertible_convert') {
+      // For conversion, show instrument type as 'from' and wallet as 'to'
+      from = tx.data?.instrument_type?.toUpperCase() || 'CONVERT'
+      to = tx.wallet || ''
     } else if (tx.tx_type === 'stock_split') {
       // For stock split, from/to represent the ratio
       from = String(tx.data?.denominator || 1)
       to = String(tx.data?.numerator || 1)
+    } else if (tx.tx_type === 'vesting_release') {
+      // For vesting release, show VESTING as source and recipient wallet as 'to'
+      from = 'VESTING'
+      to = tx.wallet || ''
+    } else if (tx.tx_type === 'dividend_payment') {
+      // For dividend payment, show DIVIDEND as source and recipient wallet as 'to'
+      from = 'DIVIDEND'
+      to = tx.wallet || ''
     } else if (tx.tx_type === 'approval' || tx.tx_type === 'revocation') {
       to = tx.wallet || ''
     }
@@ -269,11 +285,11 @@ export default function DashboardPage() {
     const type = activity.type
     switch (field) {
       case 'from':
-        return ['transfer', 'mint', 'share_grant', 'stock_split'].includes(type)
+        return ['transfer', 'mint', 'share_grant', 'stock_split', 'convertible_convert', 'vesting_release', 'dividend_payment'].includes(type)
       case 'to':
-        return ['transfer', 'mint', 'share_grant', 'approval', 'revocation', 'stock_split'].includes(type)
+        return ['transfer', 'mint', 'share_grant', 'approval', 'revocation', 'stock_split', 'convertible_convert', 'vesting_release', 'dividend_payment'].includes(type)
       case 'amount':
-        return ['transfer', 'mint', 'share_grant', 'burn'].includes(type)
+        return ['transfer', 'mint', 'share_grant', 'burn', 'convertible_convert', 'vesting_release', 'dividend_payment'].includes(type)
       default:
         return true
     }
@@ -381,48 +397,12 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Ownership Distribution</CardTitle>
-          <CardDescription>Token holder breakdown</CardDescription>
-        </CardHeader>
-        <CardContent>
-            {loading ? (
-              <div className="flex items-center justify-center h-full">
-                <p className="text-muted-foreground">Loading...</p>
-              </div>
-            ) : capTable && capTable.holders.length > 0 ? (
-              <div className="space-y-4">
-                {capTable.holders.slice(0, 5).map((holder, idx) => (
-                  <div key={holder.wallet} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: `hsl(${idx * 60}, 70%, 50%)` }}
-                      />
-                      <WalletAddress address={holder.wallet} />
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-medium">{holder.ownership_pct.toFixed(2)}%</div>
-                      <div className="text-xs text-muted-foreground">
-                        {holder.balance.toLocaleString()} shares
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {capTable.holders.length > 5 && (
-                  <p className="text-xs text-muted-foreground text-center">
-                    +{capTable.holders.length - 5} more holders
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="flex items-center justify-center h-full">
-                <p className="text-muted-foreground">No holders yet</p>
-              </div>
-            )}
-        </CardContent>
-      </Card>
+      <OwnershipDistribution
+        holders={capTable?.holders || []}
+        loading={loading}
+        title="Ownership Distribution"
+        description="Token holder breakdown"
+      />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -436,12 +416,17 @@ export default function DashboardPage() {
               onChange={(e) => setActivityFilter(e.target.value as ActivityFilter)}
               className="text-sm border rounded px-2 py-1 bg-background"
             >
-              <option value="all">All Activity</option>
-              <option value="transfer">Transfers</option>
-              <option value="mint">Mints</option>
-              <option value="share_grant">Share Grants</option>
-              <option value="approval">Approvals</option>
-              <option value="other">Other</option>
+              <option value="all">All Activity ({allActivity.length})</option>
+              <option value="transfer">Transfers ({allActivity.filter(a => a.type === 'transfer').length})</option>
+              <option value="mint">Mints ({allActivity.filter(a => a.type === 'mint').length})</option>
+              <option value="share_grant">Share Grants ({allActivity.filter(a => a.type === 'share_grant').length})</option>
+              <option value="convertible_convert">SAFE/Note Conversions ({allActivity.filter(a => a.type === 'convertible_convert').length})</option>
+              <option value="dividend_payment">Dividends ({allActivity.filter(a => a.type === 'dividend_payment').length})</option>
+              <option value="vesting_release">Vesting Releases ({allActivity.filter(a => a.type === 'vesting_release').length})</option>
+              <option value="stock_split">Stock Splits ({allActivity.filter(a => a.type === 'stock_split').length})</option>
+              <option value="funding_round">Funding Rounds ({allActivity.filter(a => a.type === 'funding_round_create' || a.type === 'funding_round_close').length})</option>
+              <option value="approval">Approvals ({allActivity.filter(a => a.type === 'approval').length})</option>
+              <option value="other">Other ({allActivity.filter(a => !knownTypes.includes(a.type)).length})</option>
             </select>
           </div>
         </CardHeader>
@@ -491,6 +476,12 @@ export default function DashboardPage() {
                                   ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
                                   : activity.type === 'stock_split'
                                   ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                                  : activity.type === 'convertible_convert'
+                                  ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400'
+                                  : activity.type === 'vesting_release'
+                                  ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
+                                  : activity.type === 'dividend_payment'
+                                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
                                   : 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400'
                               }`}>
                                 {activity.type === 'mint' ? 'MINT'
@@ -498,6 +489,9 @@ export default function DashboardPage() {
                                   : activity.type === 'transfer' ? 'TRANSFER'
                                   : activity.type === 'approval' ? 'APPROVAL'
                                   : activity.type === 'stock_split' ? 'SPLIT'
+                                  : activity.type === 'convertible_convert' ? 'CONVERT'
+                                  : activity.type === 'vesting_release' ? 'VESTING RELEASE'
+                                  : activity.type === 'dividend_payment' ? 'DIVIDEND PAYMENT'
                                   : activity.type.toUpperCase().replace('_', ' ')}
                               </span>
                             </div>
@@ -510,7 +504,7 @@ export default function DashboardPage() {
                               <span className="text-muted-foreground">—</span>
                             ) : activity.type === 'stock_split' ? (
                               <span className="font-mono text-xs font-medium">{activity.splitDenominator || activity.from}</span>
-                            ) : activity.from === 'MINT' || activity.from === 'GRANT' ? (
+                            ) : activity.from === 'MINT' || activity.from === 'GRANT' || activity.from === 'SAFE' || activity.from === 'CONVERTIBLE_NOTE' || activity.from === 'CONVERT' || activity.from === 'VESTING' || activity.from === 'DIVIDEND' ? (
                               <span className="font-mono text-xs">{activity.from}</span>
                             ) : activity.from ? (
                               <WalletAddress address={activity.from} />
@@ -627,13 +621,102 @@ export default function DashboardPage() {
                                     <p className="font-medium">{activity.splitDenominator}:{activity.splitNumerator}</p>
                                   </div>
                                 )}
+                                {activity.type === 'convertible_convert' && activity.data && (
+                                  <>
+                                    <div>
+                                      <span className="text-muted-foreground">Instrument:</span>
+                                      <p className="font-medium">
+                                        {activity.data.convertible_name || activity.data.instrument_type?.toUpperCase() || 'Unknown'}
+                                        {activity.data.holder_name && ` (${activity.data.holder_name})`}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground">Principal Amount:</span>
+                                      <p className="font-medium">
+                                        ${((activity.data.principal_amount || 0) / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground">Accrued Amount:</span>
+                                      <p className="font-medium">
+                                        ${((activity.data.accrued_amount || 0) / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground">Funding Round:</span>
+                                      <p className="font-medium">{activity.data.funding_round_name || 'Unknown'}</p>
+                                    </div>
+                                    {activity.data.valuation_cap && (
+                                      <div>
+                                        <span className="text-muted-foreground">Valuation Cap:</span>
+                                        <p className="font-medium">
+                                          ${(activity.data.valuation_cap / 100).toLocaleString(undefined, { minimumFractionDigits: 0 })}
+                                        </p>
+                                      </div>
+                                    )}
+                                    {activity.data.discount_rate != null && (
+                                      <div>
+                                        <span className="text-muted-foreground">Discount Rate:</span>
+                                        <p className="font-medium">{(activity.data.discount_rate * 100).toFixed(0)}%</p>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                                {activity.type === 'vesting_release' && activity.data && (
+                                  <>
+                                    <div>
+                                      <span className="text-muted-foreground">Shares Released:</span>
+                                      <p className="font-medium">{activity.amount?.toLocaleString() || 0}</p>
+                                    </div>
+                                    {activity.data.release_number && (
+                                      <div>
+                                        <span className="text-muted-foreground">Release Number:</span>
+                                        <p className="font-medium">{activity.data.release_number}</p>
+                                      </div>
+                                    )}
+                                    {activity.data.cumulative_released && (
+                                      <div>
+                                        <span className="text-muted-foreground">Cumulative Released:</span>
+                                        <p className="font-medium">{activity.data.cumulative_released.toLocaleString()}</p>
+                                      </div>
+                                    )}
+                                    {activity.data.remaining !== undefined && (
+                                      <div>
+                                        <span className="text-muted-foreground">Remaining:</span>
+                                        <p className="font-medium">{activity.data.remaining.toLocaleString()}</p>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                                {activity.type === 'dividend_payment' && activity.data && (
+                                  <>
+                                    <div>
+                                      <span className="text-muted-foreground">Shares Held:</span>
+                                      <p className="font-medium">{activity.data.shares_held?.toLocaleString() || 0}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground">Amount Per Share:</span>
+                                      <p className="font-medium">${((activity.data.amount_per_share || 0) / 100).toFixed(2)}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground">Total Payment:</span>
+                                      <p className="font-medium">${((activity.amount || 0) / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                    </div>
+                                    {activity.data.payment_token && (
+                                      <div>
+                                        <span className="text-muted-foreground">Payment Token:</span>
+                                        <p className="font-medium">{activity.data.payment_token}</p>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
                                 {activity.shareClass && (
                                   <div>
                                     <span className="text-muted-foreground">Share Class:</span>
                                     <p className="font-medium">{activity.shareClass}</p>
                                   </div>
                                 )}
-                                {activity.data && Object.keys(activity.data).length > 0 && (
+                                {activity.data && Object.keys(activity.data).length > 0 && !['convertible_convert', 'vesting_release', 'dividend_payment', 'stock_split'].includes(activity.type) && (
                                   <div className="col-span-2">
                                     <span className="text-muted-foreground">Additional Data:</span>
                                     <pre className="text-xs bg-muted p-2 rounded mt-1 overflow-auto">

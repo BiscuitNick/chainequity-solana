@@ -174,9 +174,6 @@ class ApiClient {
     return this.request<CapTableResponse>(`/tokens/${tokenId}/captable`)
   }
 
-  async getCapTableSnapshots(tokenId: number) {
-    return this.request<CapTableSnapshot[]>(`/tokens/${tokenId}/captable/snapshots`)
-  }
 
   // V2 Snapshot endpoints (full historical reconstruction)
   async getCapTableSnapshotsV2(tokenId: number, limit = 100) {
@@ -272,10 +269,6 @@ class ApiClient {
     })
   }
 
-  // Legacy endpoint for backwards compatibility
-  async getDividendClaims(tokenId: number, roundId: number) {
-    return this.request<DividendClaim[]>(`/tokens/${tokenId}/dividends/${roundId}/claims`)
-  }
 
   // Governance endpoints
   async getProposals(tokenId: number, status?: string) {
@@ -398,10 +391,13 @@ class ApiClient {
   }
 
   // Unified Transactions API
-  async getUnifiedTransactions(tokenId: number, limit = 50, maxSlot?: number) {
+  async getUnifiedTransactions(tokenId: number, limit = 50, maxSlot?: number, txType?: string) {
     let url = `/tokens/${tokenId}/transactions/?limit=${limit}`
     if (maxSlot !== undefined) {
       url += `&to_slot=${maxSlot}`
+    }
+    if (txType !== undefined) {
+      url += `&tx_type=${txType}`
     }
     return this.request<UnifiedTransaction[]>(url)
   }
@@ -640,12 +636,6 @@ export interface CapTableResponse {
   holders: CapTableEntry[]
 }
 
-export interface CapTableSnapshot {
-  slot: number
-  timestamp: string
-  holder_count: number
-}
-
 export interface CapTableSnapshotV2 {
   id: number
   slot: number
@@ -774,9 +764,6 @@ export interface DividendPayment {
   error_message?: string
   dividend_per_share: number
 }
-
-// Legacy alias for backwards compatibility
-export type DividendClaim = DividendPayment
 
 export interface DistributionProgress {
   round_id: number
@@ -931,7 +918,7 @@ export interface ReconstructedState {
 }
 
 // Investment Modeling Types
-export type RoundType = 'pre_seed' | 'seed' | 'series_a' | 'series_b' | 'series_c' | 'bridge' | 'other'
+export type RoundType = 'pre_seed' | 'seed' | 'series_a' | 'series_b' | 'series_c' | 'bridge' | 'revaluation' | 'other'
 export type InstrumentType = 'safe' | 'convertible_note'
 export type SafeType = 'pre_money' | 'post_money'
 export type InstrumentStatus = 'outstanding' | 'converted' | 'cancelled'
@@ -1108,8 +1095,9 @@ export interface WaterfallPayout {
   shares: number
   cost_basis: number
   preference_amount: number
+  preference_multiple: number
   payout: number
-  payout_source: 'preference' | 'partial_preference' | 'none'
+  payout_source: 'preference' | 'partial_preference' | 'conversion' | 'common' | 'none'
 }
 
 export interface WaterfallTier {

@@ -244,27 +244,6 @@ async def get_captable_at_slot(token_id: int = Path(...), slot: int = Path(...),
     return await _build_captable(token_id, db, slot)
 
 
-@router.get("/snapshots", response_model=List[SnapshotResponse])
-async def list_snapshots(token_id: int = Path(...), db: AsyncSession = Depends(get_db)):
-    """List available cap-table snapshots"""
-    result = await db.execute(
-        select(CapTableSnapshot)
-        .where(CapTableSnapshot.token_id == token_id)
-        .order_by(CapTableSnapshot.slot.desc())
-        .limit(100)
-    )
-    snapshots = result.scalars().all()
-
-    return [
-        SnapshotResponse(
-            slot=s.slot,
-            timestamp=s.block_time,
-            holder_count=s.holder_count,
-        )
-        for s in snapshots
-    ]
-
-
 @router.get("/export")
 async def export_captable(
     token_id: int = Path(...),

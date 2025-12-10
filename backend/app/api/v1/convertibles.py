@@ -9,10 +9,12 @@ from sqlalchemy.orm import selectinload
 from app.models.database import get_db
 from app.models.token import Token
 from app.models.convertible import ConvertibleInstrument
-from app.models.funding_round import FundingRound
+from app.models.funding_round import FundingRound, Investment
 from app.models.share_class import ShareClass, SharePosition
 from app.models.snapshot import CurrentBalance
 from app.models.wallet import Wallet
+from app.models.unified_transaction import TransactionType
+from app.services.transaction_service import TransactionService
 from app.schemas.investment import (
     CreateConvertibleRequest,
     ConvertibleResponse,
@@ -330,6 +332,56 @@ async def convert_convertible(
     convertible.conversion_round_id = funding_round.id
     convertible.shares_received = shares_received
     convertible.conversion_price = conversion_price
+
+    # Create an investment record to show in the funding round history
+    # This links the conversion to the funding round
+    conversion_investment = Investment(
+        token_id=token_id,
+        funding_round_id=funding_round.id,
+        investor_wallet=convertible.holder_wallet,
+        investor_name=f"{convertible.holder_name or 'Unknown'} ({convertible.instrument_type.upper()} conversion)",
+        amount=amount_to_convert,  # The value being converted
+        shares_received=shares_received,
+        price_per_share=conversion_price,
+        status="completed",  # Already completed since conversion is immediate
+    )
+    db.add(conversion_investment)
+
+    # Update funding round totals to reflect the conversion
+    # Note: The principal was raised earlier (as debt), but now we're issuing shares
+    funding_round.shares_issued = (funding_round.shares_issued or 0) + shares_received
+
+    # Record transaction for the conversion
+    transaction_service = TransactionService(db)
+    await transaction_service.record(
+        token_id=token_id,
+        tx_type=TransactionType.CONVERTIBLE_CONVERT,
+        wallet=convertible.holder_wallet,
+        amount=shares_received,
+        amount_secondary=amount_to_convert,  # cost basis = principal + interest
+        share_class_id=share_class.id,
+        priority=share_class.priority,
+        preference_multiple=share_class.preference_multiple,
+        price_per_share=conversion_price,
+        reference_id=convertible.id,
+        reference_type="convertible_instrument",
+        data={
+            "convertible_id": convertible.id,
+            "convertible_name": convertible.name,
+            "instrument_type": convertible.instrument_type,
+            "principal_amount": convertible.principal_amount,
+            "accrued_amount": amount_to_convert,
+            "valuation_cap": convertible.valuation_cap,
+            "discount_rate": convertible.discount_rate,
+            "funding_round_id": funding_round.id,
+            "funding_round_name": funding_round.name,
+            "share_class_id": share_class.id,
+            "share_class_name": share_class.name,
+            "share_class_symbol": share_class.symbol,
+            "holder_name": convertible.holder_name,
+        },
+        notes=f"Converted {convertible.instrument_type.upper()} '{convertible.name or 'Unnamed'}' at {funding_round.name}",
+    )
 
     await db.commit()
     await db.refresh(convertible)

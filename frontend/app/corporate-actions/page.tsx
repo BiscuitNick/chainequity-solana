@@ -4,19 +4,44 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/useAppStore'
-import { Split, Type, History, AlertCircle, RefreshCw, Copy, Check } from 'lucide-react'
-import { api, CorporateAction } from '@/lib/api'
+import { Split, Type, History, AlertCircle, RefreshCw, Copy, Check, AlertTriangle, Coins } from 'lucide-react'
+import { api, CorporateAction, UnifiedTransaction } from '@/lib/api'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { WalletAddress } from '@/components/WalletAddress'
 import { StockSplitModal } from '@/components/StockSplitModal'
 import { ChangeSymbolModal } from '@/components/ChangeSymbolModal'
 
+// Helper to format dates nicely
+const formatDate = (dateStr: string | null | undefined) => {
+  if (!dateStr) return '—'
+  try {
+    const date = new Date(dateStr)
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch {
+    return dateStr
+  }
+}
+
 export default function CorporateActionsPage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
+  const selectedSlot = useAppStore((state) => state.selectedSlot)
+  const setSelectedSlot = useAppStore((state) => state.setSelectedSlot)
   const [showSplitModal, setShowSplitModal] = useState(false)
   const [showSymbolModal, setShowSymbolModal] = useState(false)
   const [actions, setActions] = useState<CorporateAction[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copiedSlot, setCopiedSlot] = useState<number | null>(null)
+  // Transaction-based data (source of truth)
+  const [splitTransactions, setSplitTransactions] = useState<UnifiedTransaction[]>([])
+
+  const isViewingHistorical = selectedSlot !== null
 
   const copySlotToClipboard = async (slot: number) => {
     await navigator.clipboard.writeText(slot.toString())
@@ -40,9 +65,27 @@ export default function CorporateActionsPage() {
     }
   }
 
+  // Fetch stock split transactions (source of truth)
+  const fetchSplitTransactions = async () => {
+    if (!selectedToken) return
+    try {
+      const data = await api.getUnifiedTransactions(
+        selectedToken.tokenId,
+        1000,  // high limit to get all split transactions
+        selectedSlot ?? undefined,  // filter by max slot if viewing historical
+        'stock_split'
+      )
+      setSplitTransactions(data)
+    } catch (e: any) {
+      console.error('Failed to fetch split transactions:', e)
+      setSplitTransactions([])
+    }
+  }
+
   useEffect(() => {
     fetchCorporateActions()
-  }, [selectedToken])
+    fetchSplitTransactions()
+  }, [selectedToken, selectedSlot])
 
   const typeIcons: Record<string, JSX.Element> = {
     stock_split: <Split className="h-4 w-4" />,
@@ -79,17 +122,39 @@ export default function CorporateActionsPage() {
 
   return (
     <div className="space-y-6">
+      {isViewingHistorical && (
+        <Alert className="border-amber-500/50 bg-amber-500/10">
+          <AlertTriangle className="h-4 w-4 text-amber-500" />
+          <AlertDescription className="flex items-center justify-between">
+            <span className="text-amber-700 dark:text-amber-400">
+              Viewing historical corporate actions up to slot #{selectedSlot?.toLocaleString()}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedSlot(null)}
+              className="ml-4 text-amber-700 border-amber-500/50 hover:bg-amber-500/20"
+            >
+              Return to Live
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Corporate Actions</h1>
           <p className="text-muted-foreground">
             Stock splits and symbol changes for {selectedToken.symbol}
+            {isViewingHistorical && ' (Historical)'}
           </p>
         </div>
-        <Button variant="outline" onClick={fetchCorporateActions} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => { fetchCorporateActions(); fetchSplitTransactions(); }} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {error && (

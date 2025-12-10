@@ -124,16 +124,16 @@ export default function IssuancePage() {
         if (Array.isArray(state.positions)) {
           for (const posState of state.positions) {
             const shareClass = classes.find(c => c.id === posState.share_class_id)
-            if (posState.shares > 0) {
+            if (posState.shares > 0 && shareClass) {
               allPositions.push({
                 id: 0, // Not available in reconstructed state
                 wallet: posState.wallet,
                 shares: posState.shares,
                 cost_basis: posState.cost_basis,
                 price_per_share: posState.shares > 0 ? Math.round(posState.cost_basis / posState.shares) : 0,
-                share_class: shareClass || null,
-                preference_amount: shareClass ? posState.cost_basis * shareClass.preference_multiple : posState.cost_basis,
-                current_value: posState.shares * (selectedToken.currentPricePerShare || 0),
+                share_class: shareClass,
+                preference_amount: posState.cost_basis * shareClass.preference_multiple,
+                current_value: posState.cost_basis, // fallback to cost_basis
               })
             }
           }

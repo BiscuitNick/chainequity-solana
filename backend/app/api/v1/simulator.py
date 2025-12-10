@@ -89,6 +89,7 @@ def _build_waterfall_response(result) -> WaterfallResponse:
                         shares=p.shares,
                         cost_basis=p.cost_basis,
                         preference_amount=p.preference_amount,
+                        preference_multiple=p.preference_multiple,
                         payout=p.payout,
                         payout_source=p.payout_source,
                     )

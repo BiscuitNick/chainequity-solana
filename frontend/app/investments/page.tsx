@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,6 +16,8 @@ import {
   Layers,
   FileText,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   X,
   Users,
   Check,
@@ -28,6 +30,7 @@ import {
   api,
   EnhancedCapTableResponse,
   ShareClass,
+  SharePosition,
   FundingRound,
   ConvertibleInstrument,
   WaterfallResponse,
@@ -73,6 +76,11 @@ export default function InvestmentsPage() {
   const [shareClasses, setShareClasses] = useState<ShareClass[]>([])
   const [fundingRounds, setFundingRounds] = useState<FundingRound[]>([])
   const [convertibles, setConvertibles] = useState<ConvertibleInstrument[]>([])
+  const [positions, setPositions] = useState<SharePosition[]>([])
+
+  // Expanded row states
+  const [expandedConvertibleId, setExpandedConvertibleId] = useState<number | null>(null)
+  const [expandedPositionKey, setExpandedPositionKey] = useState<string | null>(null)
 
   // Simulator states
   const [activeTab, setActiveTab] = useState<'overview' | 'waterfall' | 'dilution'>('overview')
@@ -90,6 +98,9 @@ export default function InvestmentsPage() {
   const [showRoundDetailModal, setShowRoundDetailModal] = useState(false)
   const [selectedRound, setSelectedRound] = useState<FundingRound | null>(null)
   const [modalLoading, setModalLoading] = useState(false)
+
+  // Waterfall expanded tier states (show all holders when expanded)
+  const [expandedWaterfallTiers, setExpandedWaterfallTiers] = useState<Record<number, boolean>>({})
   const [modalError, setModalError] = useState<string | null>(null)
 
   // Funding round form states
@@ -135,6 +146,18 @@ export default function InvestmentsPage() {
       setShareClasses(classesData)
       setFundingRounds(roundsData)
       setConvertibles(convertiblesData)
+
+      // Fetch share positions for each class
+      const allPositions: SharePosition[] = []
+      for (const sc of classesData) {
+        try {
+          const classPositions = await api.getSharePositions(selectedToken.tokenId, sc.id)
+          allPositions.push(...classPositions)
+        } catch (e) {
+          // Ignore errors for individual classes
+        }
+      }
+      setPositions(allPositions)
     } catch (e: any) {
       console.error('Failed to fetch investment data:', e)
       setError(e.detail || 'Failed to fetch investment data')
@@ -556,6 +579,7 @@ export default function InvestmentsPage() {
 
       {/* Tab Content */}
       {activeTab === 'overview' && (
+        <div className="space-y-6">
         <div className="grid gap-6 md:grid-cols-2">
           {/* Share Classes */}
           {(() => {
@@ -700,42 +724,138 @@ export default function InvestmentsPage() {
                 <p className="text-center text-muted-foreground py-8">No convertible instruments</p>
               ) : (
                 <div className="space-y-3">
-                  {convertibles.map((conv) => (
-                    <div key={conv.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                      <div>
-                        <p className="font-medium">
-                          {conv.name || conv.instrument_type.toUpperCase()}
-                          {conv.holder_name && ` - ${conv.holder_name}`}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatDollars(conv.principal_amount)}
-                          {conv.accrued_amount > conv.principal_amount && ` (${formatDollars(conv.accrued_amount)} accrued)`}
-                          {conv.valuation_cap && ` | Cap: ${formatDollars(conv.valuation_cap)}`}
-                          {conv.discount_rate && ` | ${(conv.discount_rate * 100).toFixed(0)}% discount`}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2 py-1 rounded text-xs ${
-                          conv.status === 'outstanding' ? 'bg-blue-500/10 text-blue-500' :
-                          conv.status === 'converted' ? 'bg-green-500/10 text-green-500' :
-                          'bg-gray-500/10 text-gray-500'
-                        }`}>
-                          {conv.status}
-                        </span>
-                        {conv.status === 'outstanding' && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleCancelConvertible(conv)
-                            }}
-                            className="p-1 hover:bg-red-500/10 rounded text-red-500"
-                          >
-                            <Ban className="h-4 w-4" />
-                          </button>
+                  {convertibles.map((conv) => {
+                    const isExpanded = expandedConvertibleId === conv.id
+                    // Find the funding round if converted
+                    const conversionRound = conv.status === 'converted' && fundingRounds.find(r => r.id === (conv as any).conversion_round_id)
+                    return (
+                      <div key={conv.id} className="bg-muted/50 rounded-lg overflow-hidden">
+                        <div
+                          className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/70 transition-colors"
+                          onClick={() => setExpandedConvertibleId(isExpanded ? null : conv.id)}
+                        >
+                          <div className="flex items-center gap-2">
+                            {isExpanded ? (
+                              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                            )}
+                            <div>
+                              <p className="font-medium">
+                                {conv.name || conv.instrument_type.toUpperCase()}
+                                {conv.holder_name && ` - ${conv.holder_name}`}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {formatDollars(conv.principal_amount)}
+                                {conv.accrued_amount > conv.principal_amount && ` (${formatDollars(conv.accrued_amount)} accrued)`}
+                                {conv.valuation_cap && ` | Cap: ${formatDollars(conv.valuation_cap)}`}
+                                {conv.discount_rate && ` | ${(conv.discount_rate * 100).toFixed(0)}% discount`}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-1 rounded text-xs ${
+                              conv.status === 'outstanding' ? 'bg-blue-500/10 text-blue-500' :
+                              conv.status === 'converted' ? 'bg-green-500/10 text-green-500' :
+                              'bg-gray-500/10 text-gray-500'
+                            }`}>
+                              {conv.status}
+                            </span>
+                            {conv.status === 'outstanding' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleCancelConvertible(conv)
+                                }}
+                                className="p-1 hover:bg-red-500/10 rounded text-red-500"
+                              >
+                                <Ban className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {/* Expanded details */}
+                        {isExpanded && (
+                          <div className="px-3 pb-3 pt-0 border-t border-muted">
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs mt-3">
+                              <div>
+                                <span className="text-muted-foreground">Type:</span>
+                                <p className="font-medium">{conv.instrument_type === 'safe' ? 'SAFE' : 'Convertible Note'}</p>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Holder Wallet:</span>
+                                <p className="font-mono text-xs truncate">{conv.holder_wallet}</p>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Principal:</span>
+                                <p className="font-medium">{formatDollars(conv.principal_amount)}</p>
+                              </div>
+                              {conv.accrued_amount !== conv.principal_amount && (
+                                <div>
+                                  <span className="text-muted-foreground">Accrued Amount:</span>
+                                  <p className="font-medium">{formatDollars(conv.accrued_amount)}</p>
+                                </div>
+                              )}
+                              {conv.valuation_cap && (
+                                <div>
+                                  <span className="text-muted-foreground">Valuation Cap:</span>
+                                  <p className="font-medium">{formatDollars(conv.valuation_cap)}</p>
+                                </div>
+                              )}
+                              {conv.discount_rate && (
+                                <div>
+                                  <span className="text-muted-foreground">Discount Rate:</span>
+                                  <p className="font-medium">{(conv.discount_rate * 100).toFixed(0)}%</p>
+                                </div>
+                              )}
+                              {conv.interest_rate && (
+                                <div>
+                                  <span className="text-muted-foreground">Interest Rate:</span>
+                                  <p className="font-medium">{(conv.interest_rate * 100).toFixed(1)}%</p>
+                                </div>
+                              )}
+                              {conv.safe_type && (
+                                <div>
+                                  <span className="text-muted-foreground">SAFE Type:</span>
+                                  <p className="font-medium">{conv.safe_type === 'post_money' ? 'Post-Money' : 'Pre-Money'}</p>
+                                </div>
+                              )}
+                              <div>
+                                <span className="text-muted-foreground">Created:</span>
+                                <p className="font-medium">{new Date(conv.created_at).toLocaleDateString()}</p>
+                              </div>
+                              {/* Conversion details if converted */}
+                              {conv.status === 'converted' && (
+                                <>
+                                  <div className="col-span-full border-t border-muted pt-2 mt-2">
+                                    <p className="font-semibold text-green-600 mb-2">Conversion Details</p>
+                                  </div>
+                                  {conv.converted_at && (
+                                    <div>
+                                      <span className="text-muted-foreground">Converted On:</span>
+                                      <p className="font-medium">{new Date(conv.converted_at).toLocaleDateString()}</p>
+                                    </div>
+                                  )}
+                                  {conv.shares_received && (
+                                    <div>
+                                      <span className="text-muted-foreground">Shares Received:</span>
+                                      <p className="font-medium text-green-600">{conv.shares_received.toLocaleString()}</p>
+                                    </div>
+                                  )}
+                                  {conv.conversion_price && (
+                                    <div>
+                                      <span className="text-muted-foreground">Conversion Price:</span>
+                                      <p className="font-medium">{formatDollarsDetailed(conv.conversion_price)}/share</p>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </div>
                         )}
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </CardContent>
@@ -789,6 +909,149 @@ export default function InvestmentsPage() {
               </Card>
             )
           })()}
+        </div>
+
+        {/* Shareholders Table */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Shareholders
+            </CardTitle>
+            <CardDescription>
+              All investors and their share positions - click a row for details
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="flex justify-center py-8">
+                <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : positions.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">No shares have been issued yet</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-3 px-4 font-medium">Wallet</th>
+                      <th className="text-left py-3 px-4 font-medium">Share Class</th>
+                      <th className="text-center py-3 px-4 font-medium">Priority</th>
+                      <th className="text-right py-3 px-4 font-medium">Shares</th>
+                      <th className="text-right py-3 px-4 font-medium">Cost Basis</th>
+                      <th className="text-right py-3 px-4 font-medium">Current Value</th>
+                      <th className="text-right py-3 px-4 font-medium">Liq. Preference</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {positions.map((position, idx) => {
+                      const shareClass = position.share_class
+                      const positionKey = `${position.wallet}-${shareClass?.id || 0}`
+                      const preference = position.preference_amount ?? (
+                        shareClass
+                          ? position.cost_basis * shareClass.preference_multiple
+                          : position.cost_basis
+                      )
+                      const currentValue = position.current_value ?? position.cost_basis
+                      const isExpanded = expandedPositionKey === positionKey
+                      return (
+                        <Fragment key={positionKey}>
+                          <tr
+                            className="border-b hover:bg-muted/50 cursor-pointer"
+                            onClick={() => setExpandedPositionKey(isExpanded ? null : positionKey)}
+                          >
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-1">
+                                {isExpanded ? (
+                                  <ChevronUp className="h-3 w-3 text-muted-foreground" />
+                                ) : (
+                                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                                )}
+                                <WalletAddress address={position.wallet} />
+                              </div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`px-2 py-1 rounded text-xs ${
+                                shareClass?.priority === 0 ? 'bg-red-500/10 text-red-500' :
+                                (shareClass?.priority ?? 99) < 50 ? 'bg-purple-500/10 text-purple-500' :
+                                (shareClass?.priority ?? 99) < 70 ? 'bg-blue-500/10 text-blue-500' :
+                                (shareClass?.priority ?? 99) < 80 ? 'bg-green-500/10 text-green-500' :
+                                'bg-gray-500/10 text-gray-500'
+                              }`}>
+                                {shareClass?.symbol || 'Unknown'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <span className={`px-2 py-0.5 rounded text-xs ${
+                                (shareClass?.priority ?? 99) === 0 ? 'bg-red-500/10 text-red-500' :
+                                (shareClass?.priority ?? 99) < 50 ? 'bg-yellow-500/10 text-yellow-600' :
+                                'bg-gray-500/10 text-gray-500'
+                              }`}>
+                                {shareClass?.priority ?? 99}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right font-medium">
+                              {position.shares.toLocaleString()}
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <div>{formatDollars(position.cost_basis)}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {formatDollarsDetailed(position.shares > 0 ? Math.round(position.cost_basis / position.shares) : 0)}/share
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <div>{formatDollars(currentValue)}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {formatDollarsDetailed(position.shares > 0 ? Math.round(currentValue / position.shares) : 0)}/share
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <div>{formatDollars(preference)}</div>
+                              <span className="text-xs text-muted-foreground">
+                                ({shareClass?.preference_multiple || 1}x)
+                              </span>
+                            </td>
+                          </tr>
+                          {/* Expanded row with details */}
+                          {isExpanded && (
+                            <tr className="bg-muted/30">
+                              <td colSpan={7} className="py-3 px-4">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                                  <div>
+                                    <span className="text-muted-foreground">Full Wallet:</span>
+                                    <p className="font-mono text-xs break-all">{position.wallet}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Share Class:</span>
+                                    <p className="font-medium">{shareClass?.name || 'Unknown'} ({shareClass?.symbol || '?'})</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Price Per Share:</span>
+                                    <p className="font-medium">{formatDollarsDetailed(position.price_per_share)}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Preference Multiple:</span>
+                                    <p className="font-medium">{shareClass?.preference_multiple || 1}x</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Ownership:</span>
+                                    <p className="font-medium">
+                                      {totalShares > 0 ? ((position.shares / totalShares) * 100).toFixed(2) : 0}%
+                                    </p>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
         </div>
       )}
 
@@ -848,27 +1111,100 @@ export default function InvestmentsPage() {
                   <div className="space-y-4">
                     <h4 className="font-semibold">Distribution by Priority Tier</h4>
                     {waterfallResult.tiers.map((tier) => (
-                      <div key={tier.priority} className="p-4 border rounded-lg">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="font-medium">Priority {tier.priority}</span>
-                          <span className={`px-2 py-1 rounded text-xs ${
-                            tier.fully_satisfied ? 'bg-green-500/10 text-green-500' : 'bg-yellow-500/10 text-yellow-500'
-                          }`}>
-                            {tier.fully_satisfied ? 'Fully Satisfied' : 'Partial'}
-                          </span>
+                      <div key={tier.priority} className="border rounded-lg overflow-hidden">
+                        <div className="flex justify-between items-center px-4 py-3 bg-muted/30 border-b">
+                          <div>
+                            <span className="font-semibold text-lg">Priority {tier.priority}</span>
+                            <span className="text-sm text-muted-foreground ml-3">
+                              {tier.total_preference > 0 ? `Preference Pool: ${formatDollars(tier.total_preference)}` : 'Common Equity'}
+                            </span>
+                          </div>
+                          {tier.total_preference > 0 && (
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                              tier.fully_satisfied ? 'bg-green-500/15 text-green-600' : 'bg-amber-500/15 text-amber-600'
+                            }`}>
+                              {tier.fully_satisfied ? 'Fully Satisfied' : 'Partial'}
+                            </span>
+                          )}
                         </div>
-                        <div className="text-sm text-muted-foreground mb-3">
-                          Preference: {formatDollars(tier.total_preference)} |
-                          Distributed: {formatDollars(tier.amount_distributed)}
-                        </div>
-                        <div className="space-y-2">
-                          {tier.payouts.map((payout, idx) => (
-                            <div key={idx} className="flex justify-between text-sm items-center">
-                              <WalletAddress address={payout.wallet} />
-                              <span className="text-muted-foreground">{payout.share_class_name}</span>
-                              <span className="font-medium">{formatDollars(payout.payout)}</span>
-                            </div>
-                          ))}
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b bg-muted/20">
+                                <th className="text-left py-3 px-4 font-medium">Wallet</th>
+                                <th className="text-left py-3 px-4 font-medium">Share Class</th>
+                                <th className="text-right py-3 px-4 font-medium">Shares</th>
+                                <th className="text-right py-3 px-4 font-medium">Pref Multiple</th>
+                                <th className="text-right py-3 px-4 font-medium">Cost Basis</th>
+                                <th className="text-right py-3 px-4 font-medium">Total Payout</th>
+                                <th className="text-right py-3 px-4 font-medium">$/Share</th>
+                                <th className="text-right py-3 px-4 font-medium">Gain/Loss</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {tier.payouts.map((payout, idx) => {
+                                const payoutPerShare = payout.shares > 0 ? payout.payout / payout.shares : 0
+                                const gainLoss = payout.cost_basis > 0 ? ((payout.payout - payout.cost_basis) / payout.cost_basis) * 100 : null
+                                return (
+                                  <tr key={idx} className="border-b last:border-b-0 hover:bg-muted/30 transition-colors">
+                                    <td className="py-3 px-4">
+                                      <WalletAddress address={payout.wallet} />
+                                    </td>
+                                    <td className="py-3 px-4">
+                                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                        payout.share_class_name.includes('Preferred')
+                                          ? 'bg-blue-500/10 text-blue-600'
+                                          : 'bg-slate-500/10 text-slate-600'
+                                      }`}>
+                                        {payout.share_class_name}
+                                      </span>
+                                    </td>
+                                    <td className="py-3 px-4 text-right font-mono">
+                                      {payout.shares.toLocaleString()}
+                                    </td>
+                                    <td className="py-3 px-4 text-right font-mono text-muted-foreground">
+                                      {payout.preference_multiple > 0 ? `${payout.preference_multiple}x` : '—'}
+                                    </td>
+                                    <td className="py-3 px-4 text-right font-mono text-muted-foreground">
+                                      {payout.cost_basis > 0 ? formatDollars(payout.cost_basis) : '—'}
+                                    </td>
+                                    <td className="py-3 px-4 text-right font-mono font-semibold text-green-600">
+                                      {formatDollars(payout.payout)}
+                                    </td>
+                                    <td className="py-3 px-4 text-right font-mono text-muted-foreground">
+                                      ${(payoutPerShare / 100).toFixed(2)}
+                                    </td>
+                                    <td className="py-3 px-4 text-right font-mono">
+                                      {gainLoss !== null ? (
+                                        <span className={gainLoss >= 0 ? 'text-green-600' : 'text-red-600'}>
+                                          {gainLoss >= 0 ? '+' : ''}{gainLoss.toFixed(1)}%
+                                        </span>
+                                      ) : (
+                                        <span className="text-muted-foreground">—</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                            <tfoot>
+                              <tr className="bg-muted/40 font-medium">
+                                <td className="py-3 px-4" colSpan={2}>Tier Total</td>
+                                <td className="py-3 px-4 text-right font-mono">
+                                  {tier.payouts.reduce((sum, p) => sum + p.shares, 0).toLocaleString()}
+                                </td>
+                                <td className="py-3 px-4"></td>
+                                <td className="py-3 px-4 text-right font-mono">
+                                  {formatDollars(tier.payouts.reduce((sum, p) => sum + p.cost_basis, 0))}
+                                </td>
+                                <td className="py-3 px-4 text-right font-mono font-semibold text-green-600">
+                                  {formatDollars(tier.amount_distributed)}
+                                </td>
+                                <td className="py-3 px-4"></td>
+                                <td className="py-3 px-4"></td>
+                              </tr>
+                            </tfoot>
+                          </table>
                         </div>
                       </div>
                     ))}
@@ -1080,6 +1416,7 @@ export default function InvestmentsPage() {
                   <option value="series_b">Series B</option>
                   <option value="series_c">Series C</option>
                   <option value="bridge">Bridge</option>
+                  <option value="revaluation">Revaluation (409A / Appraisal)</option>
                   <option value="other">Other</option>
                 </select>
               </div>

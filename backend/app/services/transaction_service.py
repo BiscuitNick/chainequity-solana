@@ -306,6 +306,48 @@ class TransactionService:
                 if tx.data:
                     state.is_paused = tx.data.get("paused", False)
 
+            case TransactionType.CONVERTIBLE_CONVERT:
+                # SAFE/Note conversion - adds shares to holder
+                if tx.wallet and tx.amount:
+                    # Add to position
+                    key = (tx.wallet, tx.share_class_id)
+                    if key not in state.positions:
+                        state.positions[key] = PositionState(
+                            wallet=tx.wallet,
+                            share_class_id=tx.share_class_id or 0,
+                            shares=0,
+                            cost_basis=0,
+                            priority=tx.priority or 99,
+                            preference_multiple=tx.preference_multiple or 1.0,
+                        )
+                    state.positions[key].shares += tx.amount
+                    state.positions[key].cost_basis += tx.amount_secondary or 0
+
+                    # Add to balance
+                    state.balances[tx.wallet] = state.balances.get(tx.wallet, 0) + tx.amount
+                    state.total_supply += tx.amount
+
+            case TransactionType.INVESTMENT:
+                # Investment in funding round - adds shares to investor
+                if tx.wallet and tx.amount:
+                    # Add to position
+                    key = (tx.wallet, tx.share_class_id)
+                    if key not in state.positions:
+                        state.positions[key] = PositionState(
+                            wallet=tx.wallet,
+                            share_class_id=tx.share_class_id or 0,
+                            shares=0,
+                            cost_basis=0,
+                            priority=tx.priority or 99,
+                            preference_multiple=tx.preference_multiple or 1.0,
+                        )
+                    state.positions[key].shares += tx.amount
+                    state.positions[key].cost_basis += tx.amount_secondary or 0
+
+                    # Add to balance
+                    state.balances[tx.wallet] = state.balances.get(tx.wallet, 0) + tx.amount
+                    state.total_supply += tx.amount
+
             # Other transaction types don't directly affect reconstructed state
             # (proposals, votes, dividends, funding rounds, etc. are tracked
             # but don't change holder balances in the same way)

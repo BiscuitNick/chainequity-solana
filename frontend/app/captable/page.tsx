@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/useAppStore'
-import { Download, PieChart, RefreshCw, AlertTriangle } from 'lucide-react'
+import { Download, RefreshCw, AlertTriangle } from 'lucide-react'
 import { api, CapTableResponse, ReconstructedState } from '@/lib/api'
 import { WalletAddress } from '@/components/WalletAddress'
+import { OwnershipDistribution } from '@/components/OwnershipDistribution'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
 export default function CapTablePage() {
@@ -31,17 +32,31 @@ export default function CapTablePage() {
         const state = await api.getReconstructedStateAtSlot(selectedToken.tokenId, selectedSlot)
         setReconstructedState(state)
 
+        // Build vesting data map: wallet -> { vested, unvested }
+        const vestingByWallet: Record<string, { vested: number; unvested: number }> = {}
+        for (const vs of state.vesting_schedules || []) {
+          if (!vestingByWallet[vs.beneficiary]) {
+            vestingByWallet[vs.beneficiary] = { vested: 0, unvested: 0 }
+          }
+          vestingByWallet[vs.beneficiary].vested += vs.released_amount
+          vestingByWallet[vs.beneficiary].unvested += (vs.total_amount - vs.released_amount)
+        }
+
         // Build holders from reconstructed state balances
         const holders = Object.entries(state.balances)
           .filter(([_, balance]) => balance > 0)
-          .map(([wallet, balance]) => ({
-            wallet,
-            balance,
-            ownership_pct: state.total_supply > 0 ? (balance / state.total_supply) * 100 : 0,
-            vested: 0,
-            unvested: 0,
-            status: state.approved_wallets.includes(wallet) ? 'active' : 'pending',
-          }))
+          .map(([wallet, balance]) => {
+            const vestingInfo = vestingByWallet[wallet] || { vested: 0, unvested: 0 }
+            return {
+              wallet,
+              balance,
+              ownership_pct: state.total_supply > 0 ? (balance / state.total_supply) * 100 : 0,
+              vested: vestingInfo.vested,
+              unvested: vestingInfo.unvested,
+              // Default to 'active' for holders with balance; 'pending' only if explicitly not approved AND no balance
+              status: 'active' as const,
+            }
+          })
           .sort((a, b) => b.balance - a.balance)
 
         const capTableFromState: CapTableResponse = {
@@ -63,17 +78,31 @@ export default function CapTablePage() {
           if (state) {
             setReconstructedState(state)
 
+            // Build vesting data map: wallet -> { vested, unvested }
+            const vestingByWallet: Record<string, { vested: number; unvested: number }> = {}
+            for (const vs of state.vesting_schedules || []) {
+              if (!vestingByWallet[vs.beneficiary]) {
+                vestingByWallet[vs.beneficiary] = { vested: 0, unvested: 0 }
+              }
+              vestingByWallet[vs.beneficiary].vested += vs.released_amount
+              vestingByWallet[vs.beneficiary].unvested += (vs.total_amount - vs.released_amount)
+            }
+
             // Build holders from reconstructed state balances
             const holders = Object.entries(state.balances)
               .filter(([_, balance]) => balance > 0)
-              .map(([wallet, balance]) => ({
-                wallet,
-                balance,
-                ownership_pct: state.total_supply > 0 ? (balance / state.total_supply) * 100 : 0,
-                vested: 0,
-                unvested: 0,
-                status: state.approved_wallets.includes(wallet) ? 'active' : 'pending',
-              }))
+              .map(([wallet, balance]) => {
+                const vestingInfo = vestingByWallet[wallet] || { vested: 0, unvested: 0 }
+                return {
+                  wallet,
+                  balance,
+                  ownership_pct: state.total_supply > 0 ? (balance / state.total_supply) * 100 : 0,
+                  vested: vestingInfo.vested,
+                  unvested: vestingInfo.unvested,
+                  // Default to 'active' for holders with balance
+                  status: 'active' as const,
+                }
+              })
               .sort((a, b) => b.balance - a.balance)
 
             const capTableFromState: CapTableResponse = {
@@ -238,86 +267,12 @@ export default function CapTablePage() {
         </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <PieChart className="h-5 w-5" />
-              Ownership Distribution
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex justify-center py-8">
-                <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : holders.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">No holders found</p>
-            ) : (
-              <div className="space-y-4">
-                {holders.slice(0, 5).map((holder, idx) => (
-                  <div key={idx}>
-                    <div className="flex justify-between text-sm mb-1">
-                      <WalletAddress address={holder.wallet} />
-                      <span>{holder.ownership_pct.toFixed(2)}%</span>
-                    </div>
-                    <div className="w-full bg-muted rounded-full h-3">
-                      <div
-                        className="bg-primary h-3 rounded-full transition-all"
-                        style={{ width: `${holder.ownership_pct}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Distribution Overview</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex justify-center py-8">
-                <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span>Top 10 Holders</span>
-                    <span>
-                      {holders.slice(0, 10).reduce((sum, h) => sum + h.ownership_pct, 0).toFixed(1)}%
-                    </span>
-                  </div>
-                  <div className="w-full bg-muted rounded-full h-3">
-                    <div
-                      className="bg-primary h-3 rounded-full"
-                      style={{ width: `${holders.slice(0, 10).reduce((sum, h) => sum + h.ownership_pct, 0)}%` }}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span>Others</span>
-                    <span>
-                      {(100 - holders.slice(0, 10).reduce((sum, h) => sum + h.ownership_pct, 0)).toFixed(1)}%
-                    </span>
-                  </div>
-                  <div className="w-full bg-muted rounded-full h-3">
-                    <div
-                      className="bg-muted-foreground h-3 rounded-full"
-                      style={{ width: `${100 - holders.slice(0, 10).reduce((sum, h) => sum + h.ownership_pct, 0)}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      <OwnershipDistribution
+        holders={holders}
+        loading={loading}
+        title="Ownership Distribution"
+        description="Top shareholders by ownership"
+      />
 
       <Card>
         <CardHeader>
