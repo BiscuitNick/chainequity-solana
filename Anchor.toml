@@ -12,9 +12,9 @@ chainequity_token = "HmbTLCmaGvZhKnn1Zfa1JVnp7vkMV4DYVxPLWBVoN65L"
 test_usdc = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
 
 [programs.localnet]
-chainequity_factory = "3Jui9FBBhqbbxE9s83fcUya1xrG9kpUZS1pTBAcWohbE"
-chainequity_governance = "qonFMa4fD9KLRWG73aQzvQ2d5WnBNF5S9jzaRwLcwQQ"
-chainequity_token = "TxPUnQaa9MWhTdTURSZEieS6BKmpYiU4c3GtYKV3Kq2"
+chainequity_factory = "S7psPXnjCLjqdhoWXVG78nniuCfGPwQaciq7TUZEL2p"
+chainequity_governance = "CKL6Y6ma5nffMts5Q3fEyER9RoPHHGoxFnEYuLXvNWrd"
+chainequity_token = "5H3QcvZsViboQzqnv2vLjqCNyCgQ4sx3UXmYgDihTmLV"
 test_usdc = "28JkLhzXCQme5fFrAqoWwyJxSNiv71CMQcS5x4xCtqoX"
 
 [registry]

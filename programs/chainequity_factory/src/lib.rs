@@ -8,7 +8,7 @@ pub mod events;
 use instructions::*;
 use state::{CreateTokenParams, CreateTemplateParams, TransactionType};
 
-declare_id!("3Jui9FBBhqbbxE9s83fcUya1xrG9kpUZS1pTBAcWohbE");
+declare_id!("S7psPXnjCLjqdhoWXVG78nniuCfGPwQaciq7TUZEL2p");
 
 #[program]
 pub mod chainequity_factory {
@@ -44,6 +44,14 @@ pub mod chainequity_factory {
         paused: bool,
     ) -> Result<()> {
         instructions::admin::set_paused_handler(ctx, paused)
+    }
+
+    /// Transfer mint authority from token_config PDA to a new authority.
+    /// This is typically called once to transfer authority to the token program's PDA.
+    pub fn transfer_mint_authority(
+        ctx: Context<TransferMintAuthority>,
+    ) -> Result<()> {
+        instructions::admin::transfer_mint_authority_handler(ctx)
     }
 
     // ============================================

@@ -235,7 +235,6 @@ async def get_activity_feed(
     transactions = await tx_service.get_activity(
         token_id=token_id,
         limit=limit,
-        before_slot=before_slot,
     )
 
     # Format as activity items

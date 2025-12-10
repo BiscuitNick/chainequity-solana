@@ -8,7 +8,7 @@ pub mod events;
 use instructions::*;
 use state::{GovernanceAction, Vote as VoteChoice};
 
-declare_id!("qonFMa4fD9KLRWG73aQzvQ2d5WnBNF5S9jzaRwLcwQQ");
+declare_id!("CKL6Y6ma5nffMts5Q3fEyER9RoPHHGoxFnEYuLXvNWrd");
 
 #[program]
 pub mod chainequity_governance {

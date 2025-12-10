@@ -8,7 +8,7 @@ pub mod events;
 use instructions::*;
 use state::*;
 
-declare_id!("TxPUnQaa9MWhTdTURSZEieS6BKmpYiU4c3GtYKV3Kq2");
+declare_id!("5H3QcvZsViboQzqnv2vLjqCNyCgQ4sx3UXmYgDihTmLV");
 
 #[program]
 pub mod chainequity_token {
@@ -151,5 +151,11 @@ pub mod chainequity_token {
     /// Pause/unpause token transfers
     pub fn set_token_paused(ctx: Context<SetTokenPaused>, paused: bool) -> Result<()> {
         instructions::admin::set_paused_handler(ctx, paused)
+    }
+
+    /// Initialize mint authority - transfers mint authority from token_config to a PDA
+    /// owned by the token program. Must be called once after token creation.
+    pub fn initialize_mint_authority(ctx: Context<InitializeMintAuthority>) -> Result<()> {
+        instructions::admin::initialize_mint_authority_handler(ctx)
     }
 }

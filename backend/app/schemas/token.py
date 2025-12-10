@@ -15,6 +15,18 @@ class TransferRequest(BaseModel):
     amount: int
 
 
+class CreateTokenRequest(BaseModel):
+    """Request to create a token in the database (for testing/seeding)"""
+    token_id: int
+    on_chain_config: Optional[str] = None
+    mint_address: str
+    symbol: str
+    name: str
+    decimals: int = 0
+    total_supply: int = 0
+    features: Optional[Dict[str, Any]] = None
+
+
 class TokenListResponse(BaseModel):
     id: int
     token_id: int

@@ -9,7 +9,7 @@ from app.models.database import get_db
 from app.models.token import Token
 from app.schemas.token import (
     MintRequest, TransferRequest, TokenInfoResponse, BalanceResponse,
-    TokenListResponse, TokenHolder
+    TokenListResponse, TokenHolder, CreateTokenRequest
 )
 from app.services.solana_client import get_solana_client
 
@@ -44,6 +44,57 @@ async def list_tokens(
         )
         for t in tokens
     ]
+
+
+@router.post("/", response_model=TokenListResponse)
+async def create_token(
+    request: CreateTokenRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a token in the database (for testing/seeding purposes)"""
+    # Check if token already exists
+    result = await db.execute(
+        select(Token).where(Token.token_id == request.token_id)
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Token with token_id {request.token_id} already exists")
+
+    # Also check symbol uniqueness
+    result = await db.execute(
+        select(Token).where(Token.symbol == request.symbol)
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Token with symbol {request.symbol} already exists")
+
+    # Create new token
+    token = Token(
+        token_id=request.token_id,
+        on_chain_config=request.on_chain_config or request.mint_address,  # Use mint as fallback
+        mint_address=request.mint_address,
+        symbol=request.symbol,
+        name=request.name,
+        decimals=request.decimals,
+        total_supply=request.total_supply,
+        features=request.features,
+        is_paused=False,
+    )
+    db.add(token)
+    await db.commit()
+    await db.refresh(token)
+
+    return TokenListResponse(
+        id=token.id,
+        token_id=token.token_id,
+        mint_address=token.mint_address,
+        symbol=token.symbol,
+        name=token.name,
+        decimals=token.decimals,
+        total_supply=token.total_supply,
+        is_paused=token.is_paused,
+        created_at=token.created_at,
+    )
 
 
 @router.get("/{token_id}/info", response_model=TokenInfoResponse)

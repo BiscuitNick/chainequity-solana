@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/useAppStore'
 import { Download, PieChart, RefreshCw, AlertTriangle } from 'lucide-react'
-import { api, CapTableResponse, CapTableEntry, CapTableSnapshotV2Detail } from '@/lib/api'
+import { api, CapTableResponse, ReconstructedState } from '@/lib/api'
 import { WalletAddress } from '@/components/WalletAddress'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
@@ -14,7 +14,7 @@ export default function CapTablePage() {
   const selectedSlot = useAppStore((state) => state.selectedSlot)
   const setSelectedSlot = useAppStore((state) => state.setSelectedSlot)
   const [capTable, setCapTable] = useState<CapTableResponse | null>(null)
-  const [historicalSnapshot, setHistoricalSnapshot] = useState<CapTableSnapshotV2Detail | null>(null)
+  const [reconstructedState, setReconstructedState] = useState<ReconstructedState | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -24,69 +24,34 @@ export default function CapTablePage() {
     if (!selectedToken) return
     setLoading(true)
     setError(null)
-    setHistoricalSnapshot(null)
+    setReconstructedState(null)
     try {
       if (isViewingHistorical && selectedSlot !== null) {
-        // Use V2 snapshot API for historical data
-        const snapshot = await api.getCapTableSnapshotV2AtSlot(selectedToken.tokenId, selectedSlot)
-        setHistoricalSnapshot(snapshot)
+        // Use on-the-fly state reconstruction from transactions
+        const state = await api.getReconstructedStateAtSlot(selectedToken.tokenId, selectedSlot)
+        setReconstructedState(state)
 
-        // Build holders from both token balances AND share positions
-        const holdersMap = new Map<string, { wallet: string; balance: number; shares: number; status: string }>()
-
-        // Add token balance holders
-        for (const h of (snapshot.holders || [])) {
-          holdersMap.set(h.wallet, {
-            wallet: h.wallet,
-            balance: h.balance || 0,
-            shares: 0,
-            status: h.status || 'active',
-          })
-        }
-
-        // Add/update share position holders
-        for (const sp of (snapshot.share_positions || [])) {
-          const existing = holdersMap.get(sp.wallet)
-          if (existing) {
-            existing.shares += sp.shares || 0
-          } else {
-            holdersMap.set(sp.wallet, {
-              wallet: sp.wallet,
-              balance: 0,
-              shares: sp.shares || 0,
-              status: 'active',
-            })
-          }
-        }
-
-        // Calculate total shares for ownership percentage
-        const totalShares = snapshot.total_shares || Array.from(holdersMap.values()).reduce((sum, h) => sum + h.shares, 0)
-        const totalSupply = snapshot.total_supply || 0
-
-        // Convert to holders array with ownership calculation
-        // Use shares if available, otherwise use token balance
-        const holders = Array.from(holdersMap.values()).map(h => {
-          const effectiveBalance = h.shares > 0 ? h.shares : h.balance
-          const totalForPct = h.shares > 0 ? totalShares : totalSupply
-          return {
-            wallet: h.wallet,
-            balance: effectiveBalance,
-            ownership_pct: totalForPct > 0 ? (effectiveBalance / totalForPct) * 100 : 0,
+        // Build holders from reconstructed state balances
+        const holders = Object.entries(state.balances)
+          .filter(([_, balance]) => balance > 0)
+          .map(([wallet, balance]) => ({
+            wallet,
+            balance,
+            ownership_pct: state.total_supply > 0 ? (balance / state.total_supply) * 100 : 0,
             vested: 0,
             unvested: 0,
-            status: h.status,
-          }
-        }).filter(h => h.balance > 0)  // Only show holders with positive balance
-          .sort((a, b) => b.balance - a.balance)  // Sort by balance descending
+            status: state.approved_wallets.includes(wallet) ? 'active' : 'pending',
+          }))
+          .sort((a, b) => b.balance - a.balance)
 
-        const capTableFromSnapshot: CapTableResponse = {
-          slot: snapshot.slot,
-          timestamp: snapshot.timestamp || new Date().toISOString(),
-          total_supply: totalShares > 0 ? totalShares : totalSupply,
+        const capTableFromState: CapTableResponse = {
+          slot: state.slot,
+          timestamp: new Date().toISOString(),
+          total_supply: state.total_supply,
           holder_count: holders.length,
           holders,
         }
-        setCapTable(capTableFromSnapshot)
+        setCapTable(capTableFromState)
       } else {
         // Live data - use current cap table
         const data = await api.getCapTable(selectedToken.tokenId)
@@ -148,10 +113,7 @@ export default function CapTablePage() {
           <AlertTriangle className="h-4 w-4 text-amber-500" />
           <AlertDescription className="flex items-center justify-between">
             <span className="text-amber-700 dark:text-amber-400">
-              Viewing historical data from snapshot at slot #{historicalSnapshot?.slot?.toLocaleString() || selectedSlot?.toLocaleString()}
-              {historicalSnapshot && historicalSnapshot.slot !== selectedSlot && (
-                <span className="text-xs ml-2">(nearest to requested slot #{selectedSlot?.toLocaleString()})</span>
-              )}
+              Viewing historical data reconstructed at slot #{reconstructedState?.slot?.toLocaleString() || selectedSlot?.toLocaleString()}
             </span>
             <Button
               variant="outline"

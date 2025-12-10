@@ -254,3 +254,26 @@ pub const VESTING_ESCROW_SEED: &[u8] = b"vesting_escrow";
 pub const DIVIDEND_ROUND_SEED: &[u8] = b"dividend_round";
 pub const DIVIDEND_CLAIM_SEED: &[u8] = b"dividend_claim";
 pub const DIVIDEND_POOL_SEED: &[u8] = b"dividend_pool";
+pub const MINT_AUTHORITY_SEED: &[u8] = b"mint_authority";
+
+// ============================================================================
+// MINT AUTHORITY
+// ============================================================================
+
+/// Mint authority PDA for a token - allows the token program to sign mint operations
+#[account]
+pub struct MintAuthority {
+    /// The token config this mint authority is for
+    pub token_config: Pubkey,
+    /// The mint this authority controls
+    pub mint: Pubkey,
+    /// PDA bump
+    pub bump: u8,
+}
+
+impl MintAuthority {
+    pub const LEN: usize = 8 + // discriminator
+        32 + // token_config
+        32 + // mint
+        1;   // bump
+}

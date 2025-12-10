@@ -152,7 +152,7 @@ const factoryIdl = JSON.parse(
 );
 
 // Program IDs from Anchor.toml localnet
-const FACTORY_PROGRAM_ID = new PublicKey("3Jui9FBBhqbbxE9s83fcUya1xrG9kpUZS1pTBAcWohbE");
+const FACTORY_PROGRAM_ID = new PublicKey("S7psPXnjCLjqdhoWXVG78nniuCfGPwQaciq7TUZEL2p");
 
 async function main() {
   const config = parseArgs();

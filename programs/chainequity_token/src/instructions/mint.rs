@@ -3,7 +3,7 @@ use anchor_spl::token_2022::{self, Token2022, MintTo};
 use anchor_spl::token_interface::{Mint, TokenAccount};
 use chainequity_factory::instructions::create_token::TokenConfig;
 
-use crate::state::{AllowlistEntry, AllowlistStatus, ALLOWLIST_SEED};
+use crate::state::{AllowlistEntry, AllowlistStatus, MintAuthority, ALLOWLIST_SEED, MINT_AUTHORITY_SEED};
 use crate::errors::TokenError;
 use crate::events::TokensMinted;
 
@@ -17,6 +17,15 @@ pub struct MintTokens<'info> {
         constraint = mint.key() == token_config.mint @ TokenError::Unauthorized,
     )]
     pub mint: InterfaceAccount<'info, Mint>,
+
+    /// The mint authority PDA that can sign for minting
+    #[account(
+        seeds = [MINT_AUTHORITY_SEED, token_config.key().as_ref()],
+        bump = mint_authority.bump,
+        constraint = mint_authority.token_config == token_config.key() @ TokenError::Unauthorized,
+        constraint = mint_authority.mint == mint.key() @ TokenError::Unauthorized,
+    )]
+    pub mint_authority: Account<'info, MintAuthority>,
 
     #[account(
         seeds = [ALLOWLIST_SEED, token_config.key().as_ref(), recipient.key().as_ref()],
@@ -46,22 +55,25 @@ pub fn handler(ctx: Context<MintTokens>, amount: u64) -> Result<()> {
     require!(!ctx.accounts.token_config.is_paused, TokenError::TransfersPaused);
 
     let token_config = &ctx.accounts.token_config;
+    let mint_authority = &ctx.accounts.mint_authority;
+    let token_config_key = token_config.key();
+
+    // Use mint_authority PDA for signing - this PDA is owned by the token program
     let seeds = &[
-        b"token_config",
-        token_config.factory.as_ref(),
-        &token_config.token_id.to_le_bytes(),
-        &[token_config.bump],
+        MINT_AUTHORITY_SEED,
+        token_config_key.as_ref(),
+        &[mint_authority.bump],
     ];
     let signer_seeds = &[&seeds[..]];
 
-    // Mint tokens
+    // Mint tokens using the mint_authority PDA as signer
     token_2022::mint_to(
         CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             MintTo {
                 mint: ctx.accounts.mint.to_account_info(),
                 to: ctx.accounts.recipient_token_account.to_account_info(),
-                authority: ctx.accounts.token_config.to_account_info(),
+                authority: ctx.accounts.mint_authority.to_account_info(),
             },
             signer_seeds,
         ),

@@ -8,7 +8,7 @@ import { Program } from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
 
 // Program IDs
-const FACTORY_PROGRAM_ID = new PublicKey("3Jui9FBBhqbbxE9s83fcUya1xrG9kpUZS1pTBAcWohbE");
+const FACTORY_PROGRAM_ID = new PublicKey("S7psPXnjCLjqdhoWXVG78nniuCfGPwQaciq7TUZEL2p");
 const TOKEN_PROGRAM_ID = new PublicKey("TxPUnQaa9MWhTdTURSZEieS6BKmpYiU4c3GtYKV3Kq2");
 
 // Factory and Token IDLs
