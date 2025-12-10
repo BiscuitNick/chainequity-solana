@@ -3,8 +3,19 @@
 import { useState, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Table2, PieChart } from 'lucide-react'
+import { Table2, PieChart as PieChartIcon, BarChart3 } from 'lucide-react'
 import { WalletAddress } from '@/components/WalletAddress'
+import {
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts'
 
 export interface Holder {
   wallet: string
@@ -19,7 +30,7 @@ interface OwnershipDistributionProps {
   description?: string
 }
 
-const PIE_COLORS = [
+const CHART_COLORS = [
   'hsl(221, 83%, 53%)',   // blue
   'hsl(142, 71%, 45%)',   // green
   'hsl(262, 83%, 58%)',   // purple
@@ -33,13 +44,46 @@ const PIE_COLORS = [
   'hsl(210, 20%, 50%)',   // gray for Others
 ]
 
+type ViewMode = 'table' | 'pie' | 'bar'
+
+function truncateWallet(wallet: string, isOthers: boolean): string {
+  if (isOthers) return wallet
+  return `${wallet.slice(0, 8)}...${wallet.slice(-4)}`
+}
+
+interface CustomTooltipProps {
+  active?: boolean
+  payload?: Array<{
+    payload: {
+      wallet: string
+      balance: number
+      ownership_pct: number
+      isOthers: boolean
+    }
+  }>
+}
+
+function CustomTooltip({ active, payload }: CustomTooltipProps) {
+  if (!active || !payload || !payload.length) return null
+
+  const data = payload[0].payload
+  return (
+    <div className="bg-popover border rounded-md shadow-md p-2 text-sm">
+      <p className="font-medium">{truncateWallet(data.wallet, data.isOthers)}</p>
+      <p className="text-muted-foreground">
+        {data.balance.toLocaleString()} shares ({data.ownership_pct.toFixed(2)}%)
+      </p>
+    </div>
+  )
+}
+
 export function OwnershipDistribution({
   holders,
   loading = false,
   title = 'Ownership Distribution',
   description = 'Top shareholders by ownership',
 }: OwnershipDistributionProps) {
-  const [viewMode, setViewMode] = useState<'table' | 'pie'>('table')
+  const [viewMode, setViewMode] = useState<ViewMode>('table')
 
   // Process holders: top 10 + Others
   const processedData = useMemo(() => {
@@ -53,69 +97,27 @@ export function OwnershipDistribution({
       wallet: h.wallet,
       balance: h.balance,
       ownership_pct: h.ownership_pct,
-      color: PIE_COLORS[idx],
+      color: CHART_COLORS[idx],
       isOthers: false,
+      name: truncateWallet(h.wallet, false),
     }))
 
     if (others.length > 0) {
       const othersTotal = others.reduce((sum, h) => sum + h.balance, 0)
       const othersPct = others.reduce((sum, h) => sum + h.ownership_pct, 0)
+      const othersName = `Others (${others.length})`
       result.push({
-        wallet: `Others (${others.length})`,
+        wallet: othersName,
         balance: othersTotal,
         ownership_pct: othersPct,
-        color: PIE_COLORS[10],
+        color: CHART_COLORS[10],
         isOthers: true,
+        name: othersName,
       })
     }
 
     return result
   }, [holders])
-
-  // Generate pie chart SVG paths
-  const pieSlices = useMemo(() => {
-    if (processedData.length === 0) return []
-
-    const slices: { d: string; color: string; label: string; pct: number }[] = []
-    let startAngle = -90 // Start from top
-
-    processedData.forEach((item) => {
-      const pct = item.ownership_pct
-      if (pct <= 0) return
-
-      const angle = (pct / 100) * 360
-      const endAngle = startAngle + angle
-
-      // Convert angles to radians
-      const startRad = (startAngle * Math.PI) / 180
-      const endRad = (endAngle * Math.PI) / 180
-
-      // Calculate arc points
-      const cx = 100
-      const cy = 100
-      const r = 80
-
-      const x1 = cx + r * Math.cos(startRad)
-      const y1 = cy + r * Math.sin(startRad)
-      const x2 = cx + r * Math.cos(endRad)
-      const y2 = cy + r * Math.sin(endRad)
-
-      const largeArc = angle > 180 ? 1 : 0
-
-      const d = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`
-
-      slices.push({
-        d,
-        color: item.color,
-        label: item.isOthers ? item.wallet : item.wallet.slice(0, 8) + '...',
-        pct: item.ownership_pct,
-      })
-
-      startAngle = endAngle
-    })
-
-    return slices
-  }, [processedData])
 
   return (
     <Card>
@@ -130,6 +132,7 @@ export function OwnershipDistribution({
             size="sm"
             className="h-7 px-2"
             onClick={() => setViewMode('table')}
+            aria-label="Table view"
           >
             <Table2 className="h-4 w-4" />
           </Button>
@@ -138,8 +141,18 @@ export function OwnershipDistribution({
             size="sm"
             className="h-7 px-2"
             onClick={() => setViewMode('pie')}
+            aria-label="Pie chart view"
           >
-            <PieChart className="h-4 w-4" />
+            <PieChartIcon className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={viewMode === 'bar' ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-7 px-2"
+            onClick={() => setViewMode('bar')}
+            aria-label="Bar chart view"
+          >
+            <BarChart3 className="h-4 w-4" />
           </Button>
         </div>
       </CardHeader>
@@ -189,22 +202,29 @@ export function OwnershipDistribution({
               </tbody>
             </table>
           </div>
-        ) : (
+        ) : viewMode === 'pie' ? (
           <div className="flex flex-col md:flex-row items-center gap-6">
             {/* Pie Chart */}
-            <div className="flex-shrink-0">
-              <svg width="200" height="200" viewBox="0 0 200 200">
-                {pieSlices.map((slice, idx) => (
-                  <path
-                    key={idx}
-                    d={slice.d}
-                    fill={slice.color}
+            <div className="flex-shrink-0 w-[200px] h-[200px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={processedData}
+                    dataKey="ownership_pct"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    strokeWidth={2}
                     stroke="hsl(var(--background))"
-                    strokeWidth="2"
-                    className="transition-opacity hover:opacity-80"
-                  />
-                ))}
-              </svg>
+                  >
+                    {processedData.map((entry, idx) => (
+                      <Cell key={idx} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
             {/* Legend */}
             <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
@@ -215,7 +235,7 @@ export function OwnershipDistribution({
                     style={{ backgroundColor: item.color }}
                   />
                   <span className="truncate">
-                    {item.isOthers ? item.wallet : `${item.wallet.slice(0, 8)}...${item.wallet.slice(-4)}`}
+                    {truncateWallet(item.wallet, item.isOthers)}
                   </span>
                   <span className="text-muted-foreground ml-auto">
                     {item.ownership_pct.toFixed(1)}%
@@ -223,6 +243,37 @@ export function OwnershipDistribution({
                 </div>
               ))}
             </div>
+          </div>
+        ) : (
+          /* Bar Chart */
+          <div className="w-full h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={processedData}
+                layout="vertical"
+                margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
+              >
+                <XAxis
+                  type="number"
+                  domain={[0, 'auto']}
+                  tickFormatter={(value) => `${value.toFixed(0)}%`}
+                  fontSize={12}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={90}
+                  fontSize={11}
+                  tickLine={false}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Bar dataKey="ownership_pct" radius={[0, 4, 4, 0]}>
+                  {processedData.map((entry, idx) => (
+                    <Cell key={idx} fill={entry.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         )}
       </CardContent>
