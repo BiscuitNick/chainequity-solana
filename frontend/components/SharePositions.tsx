@@ -201,7 +201,11 @@ export function SharePositions({
                   )
                   const currentValue = position.current_value ?? position.cost_basis
                   const isExpanded = expandedRows.has(positionKey)
-                  const transactions = walletTransactions[position.wallet] || []
+                  // Filter transactions to only show those for this specific share class
+                  const allWalletTransactions = walletTransactions[position.wallet] || []
+                  const transactions = allWalletTransactions.filter(tx =>
+                    tx.share_class_id === shareClass?.id
+                  )
                   const isLoadingTx = loadingTransactions.has(position.wallet)
 
                   return (
