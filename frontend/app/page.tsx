@@ -28,6 +28,8 @@ type Activity = {
   // Stock split specific
   splitNumerator?: number
   splitDenominator?: number
+  // Cost basis / total amount (in cents)
+  amountSecondary?: number | null
 }
 
 type ActivityFilter = 'all' | 'shares' | 'transfer' | 'approval' | 'dividend_payment' | 'stock_split' | 'funding_round' | 'other'
@@ -153,6 +155,7 @@ export default function DashboardPage() {
       data: tx.data,
       splitNumerator: tx.data?.numerator,
       splitDenominator: tx.data?.denominator,
+      amountSecondary: tx.amount_secondary,
     }
   }
 
@@ -483,6 +486,7 @@ export default function DashboardPage() {
                       <th className="text-left py-2 px-2 font-medium">From</th>
                       <th className="text-left py-2 px-2 font-medium">To</th>
                       <th className="text-right py-2 px-2 font-medium">Shares</th>
+                      <th className="text-right py-2 px-2 font-medium">Total</th>
                       <th className="text-left py-2 px-2 font-medium">Date & Time</th>
                       <th className="text-left py-2 px-2 font-medium">Slot</th>
                       <th className="text-center py-2 px-2 font-medium">Status</th>
@@ -515,6 +519,8 @@ export default function DashboardPage() {
                                   ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
                                   : activity.type === 'dividend_payment'
                                   ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                  : (activity.type === 'funding_round_create' || activity.type === 'funding_round_close')
+                                  ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
                                   : 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400'
                               }`}>
                                 {/* All share issuances show as SHARES */}
@@ -524,6 +530,7 @@ export default function DashboardPage() {
                                   : activity.type === 'approval' ? 'APPROVAL'
                                   : activity.type === 'stock_split' ? 'SPLIT'
                                   : activity.type === 'dividend_payment' ? 'DIVIDEND'
+                                  : (activity.type === 'funding_round_create' || activity.type === 'funding_round_close') ? 'FUNDING ROUND'
                                   : activity.type.toUpperCase().replace('_', ' ')}
                               </span>
                             </div>
@@ -553,13 +560,34 @@ export default function DashboardPage() {
                             )}
                           </td>
                           <td className="py-2 px-2 text-right font-medium whitespace-nowrap">
+                            {/* For dividends, show shares_held from data; otherwise show amount */}
                             {!isFieldRelevant(activity, 'amount') ? (
                               <span className="text-muted-foreground">—</span>
+                            ) : activity.type === 'dividend_payment' ? (
+                              activity.data?.shares_held?.toLocaleString() ?? <span className="text-muted-foreground">—</span>
                             ) : activity.amount !== null && activity.amount !== undefined ? (
                               activity.amount.toLocaleString()
                             ) : (
                               <span className="text-muted-foreground">—</span>
                             )}
+                          </td>
+                          <td className="py-2 px-2 text-right font-medium whitespace-nowrap">
+                            {/* Total column: show dollar amounts for relevant transaction types */}
+                            {(() => {
+                              // Dividend: total payout = shares * amount per share (both in cents, amount is stored as total)
+                              if (activity.type === 'dividend_payment' && activity.amount) {
+                                return `$${(activity.amount / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              }
+                              // Share purchases (investment/mint/share_grant with cost): amount_secondary is cost basis in cents
+                              if (['mint', 'share_grant', 'investment'].includes(activity.type) && activity.amountSecondary && activity.amountSecondary > 0) {
+                                return `$${(activity.amountSecondary / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              }
+                              // Funding round: show target_amount from data
+                              if ((activity.type === 'funding_round_create' || activity.type === 'funding_round_close') && activity.data?.target_amount) {
+                                return `$${(activity.data.target_amount / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              }
+                              return <span className="text-muted-foreground">—</span>
+                            })()}
                           </td>
                           <td className="py-2 px-2 text-xs text-muted-foreground whitespace-nowrap">
                             {formatLocalTime(activity.timestamp)}
@@ -626,7 +654,7 @@ export default function DashboardPage() {
                         {/* Expanded row details */}
                         {expandedRows.has(activity.id) && (
                           <tr className="bg-muted/30">
-                            <td colSpan={8} className="py-3 px-4">
+                            <td colSpan={9} className="py-3 px-4">
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
                                 <div>
                                   <span className="text-muted-foreground">Transaction Type:</span>
