@@ -112,7 +112,7 @@ async def create_funding_round(
     if request.pre_money_valuation <= 0:
         raise HTTPException(status_code=400, detail="Pre-money valuation must be positive")
 
-    # Calculate fully diluted shares from actual share positions (not token.total_supply which may be stale)
+    # Calculate fully diluted shares from actual share positions
     result = await db.execute(
         select(func.coalesce(func.sum(SharePosition.shares), 0))
         .where(SharePosition.token_id == token_id)
@@ -126,8 +126,9 @@ async def create_funding_round(
     )
     onchain_shares = result.scalar() or 0
 
-    # Use the maximum of the two (they should ideally match, but use max for safety)
-    fully_diluted_shares = max(fully_diluted_shares, onchain_shares, 1)
+    # Use the maximum of the various sources, with token.total_supply as fallback
+    # (useful when indexer hasn't run yet but token was created with total_supply)
+    fully_diluted_shares = max(fully_diluted_shares, onchain_shares, token.total_supply or 0, 1)
 
     # Calculate price per share
     price_per_share = request.pre_money_valuation // fully_diluted_shares

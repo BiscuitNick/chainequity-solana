@@ -53,23 +53,37 @@ export default function TokensPage() {
 
       if (response.ok) {
         const data = await response.json()
-        // Fetch cap table data for each token to get issued supply and holder count
+
+        // Get current slot for state reconstruction
+        const baseUrl = apiUrl.replace('/api/v1', '')
+        let currentSlot = 999999 // fallback to large slot number
+        try {
+          const slotRes = await fetch(`${baseUrl}/slot`)
+          if (slotRes.ok) {
+            const slotData = await slotRes.json()
+            currentSlot = slotData.slot || 999999
+          }
+        } catch (e) {
+          console.error('Failed to fetch current slot:', e)
+        }
+
+        // Fetch reconstructed state for each token (transaction-based, matches dashboard)
         const tokensWithCapTable = await Promise.all(
           data.map(async (t: any) => {
             let issuedSupply = 0
             let holders = 0
             let features: TokenFeatures = {}
 
-            // Fetch cap table data
+            // Fetch reconstructed state from transactions (same as dashboard)
             try {
-              const capTableRes = await fetch(`${apiUrl}/tokens/${t.token_id}/captable`)
-              if (capTableRes.ok) {
-                const capTable = await capTableRes.json()
-                issuedSupply = capTable.total_supply || 0
-                holders = capTable.holder_count || 0
+              const stateRes = await fetch(`${apiUrl}/tokens/${t.token_id}/captable/state/${currentSlot}`)
+              if (stateRes.ok) {
+                const state = await stateRes.json()
+                issuedSupply = state.total_supply || 0
+                holders = state.holder_count || 0
               }
             } catch (e) {
-              console.error(`Failed to fetch cap table for token ${t.token_id}:`, e)
+              console.error(`Failed to fetch state for token ${t.token_id}:`, e)
             }
 
             // Fetch token details with features
