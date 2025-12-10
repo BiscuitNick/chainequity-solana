@@ -5,15 +5,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useAppStore } from '@/stores/useAppStore'
-import api, { CapTableResponse, Proposal, Transfer, TransferStatsResponse, IssuanceStatsResponse, TokenIssuance, CapTableSnapshotV2Detail, SharePosition } from '@/lib/api'
+import api, { CapTableResponse, Proposal, TransferStatsResponse, IssuanceStatsResponse, CapTableSnapshotV2Detail, UnifiedTransaction } from '@/lib/api'
 import { WalletAddress } from '@/components/WalletAddress'
 import { AlertTriangle, Copy, History, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
-// Combined activity type for displaying transfers, issuances, and share grants
+// Combined activity type for displaying all unified transactions
 type Activity = {
   id: string
-  type: 'transfer' | 'issuance' | 'share_grant'
+  type: string  // tx_type from unified transactions
   from: string
   to: string
   amount: number
@@ -21,9 +21,10 @@ type Activity = {
   status: string
   slot?: number
   shareClass?: string  // For share grants
+  txSignature?: string
 }
 
-type ActivityFilter = 'all' | 'transfer' | 'issuance' | 'share_grant'
+type ActivityFilter = 'all' | 'transfer' | 'mint' | 'share_grant' | 'approval' | 'other'
 
 const ITEMS_PER_PAGE = 10
 
@@ -49,6 +50,8 @@ export default function DashboardPage() {
   // Filter activities based on selected filter
   const filteredActivity = activityFilter === 'all'
     ? allActivity
+    : activityFilter === 'other'
+    ? allActivity.filter(a => !['transfer', 'mint', 'share_grant', 'approval'].includes(a.type))
     : allActivity.filter(a => a.type === activityFilter)
 
   // Paginate
@@ -73,6 +76,28 @@ export default function DashboardPage() {
     setSelectedSlot(slot)
   }
 
+  // Helper function to convert unified transaction to Activity
+  const convertTransactionToActivity = (tx: UnifiedTransaction): Activity => {
+    // Determine 'from' based on transaction type
+    let from = tx.wallet || ''
+    if (tx.tx_type === 'mint' || tx.tx_type === 'share_grant') {
+      from = tx.tx_type === 'mint' ? 'MINT' : 'GRANT'
+    }
+
+    return {
+      id: `tx-${tx.id}`,
+      type: tx.tx_type,
+      from,
+      to: tx.wallet_to || tx.wallet || '',
+      amount: tx.amount || 0,
+      timestamp: tx.created_at,
+      status: 'completed',
+      slot: tx.slot,
+      shareClass: tx.data?.share_class_symbol || tx.data?.share_class_name,
+      txSignature: tx.tx_signature || undefined,
+    }
+  }
+
   useEffect(() => {
     if (selectedToken?.tokenId === undefined || selectedToken?.tokenId === null) return
 
@@ -81,25 +106,22 @@ export default function DashboardPage() {
       setHistoricalSnapshot(null)
       try {
         if (isViewingHistorical && selectedSlot !== null) {
-          // Use V2 snapshot API for historical data + fetch transactions up to that slot
-          const [snapshot, transfersData, issuancesData, sharePositionsData] = await Promise.all([
+          // Use V2 snapshot API for historical data + fetch unified transactions up to that slot
+          const [snapshot, transactions] = await Promise.all([
             api.getCapTableSnapshotV2AtSlot(selectedToken.tokenId, selectedSlot),
-            api.getRecentTransfers(selectedToken.tokenId, 50, selectedSlot).catch(() => []),
-            api.getRecentIssuances(selectedToken.tokenId, 50, selectedSlot).catch(() => []),
-            api.getRecentSharePositions(selectedToken.tokenId, 50, selectedSlot).catch(() => []),
+            api.getUnifiedTransactions(selectedToken.tokenId, 100, selectedSlot).catch(() => []),
           ])
           setHistoricalSnapshot(snapshot)
+
           // Convert snapshot to CapTableResponse format for display
-          // Combine holders from snapshot with share position holders
           const snapshotHolders = snapshot.holders || []
-          const snapshotHolderWallets = new Set(snapshotHolders.map((h: any) => h.wallet))
 
-          // Get unique shareholders from share positions
-          const shareHolderWallets = new Set(sharePositionsData.map((sp: SharePosition) => sp.wallet))
-
-          // Combine: all snapshot holders + share position holders not in snapshot
-          const combinedHolders = [
-            ...snapshotHolders.map((h: any) => ({
+          const capTableFromSnapshot: CapTableResponse = {
+            slot: snapshot.slot,
+            timestamp: snapshot.timestamp || new Date().toISOString(),
+            total_supply: snapshot.total_supply,
+            holder_count: snapshotHolders.length,
+            holders: snapshotHolders.map((h: any) => ({
               wallet: h.wallet,
               balance: h.balance,
               ownership_pct: snapshot.total_supply > 0 ? (h.balance / snapshot.total_supply) * 100 : 0,
@@ -107,24 +129,6 @@ export default function DashboardPage() {
               unvested: 0,
               status: h.status || 'active',
             })),
-            ...Array.from(shareHolderWallets)
-              .filter(wallet => !snapshotHolderWallets.has(wallet))
-              .map(wallet => ({
-                wallet,
-                balance: 0,
-                ownership_pct: 0,
-                vested: 0,
-                unvested: 0,
-                status: 'active',
-              })),
-          ]
-
-          const capTableFromSnapshot: CapTableResponse = {
-            slot: snapshot.slot,
-            timestamp: snapshot.timestamp || new Date().toISOString(),
-            total_supply: snapshot.total_supply,
-            holder_count: combinedHolders.length,
-            holders: combinedHolders,
           }
           setCapTable(capTableFromSnapshot)
           // Clear live stats when viewing historical
@@ -132,97 +136,31 @@ export default function DashboardPage() {
           setTransferStats(null)
           setIssuanceStats(null)
 
-          // Build activity feed from historical transactions (up to and including the selected slot)
-          const activities: Activity[] = [
-            ...transfersData.map((t: Transfer) => ({
-              id: `transfer-${t.id}`,
-              type: 'transfer' as const,
-              from: t.from_wallet,
-              to: t.to_wallet,
-              amount: t.amount,
-              timestamp: t.block_time,
-              status: t.status,
-              slot: t.slot,
-            })),
-            ...issuancesData.map((i: TokenIssuance) => ({
-              id: `issuance-${i.id}`,
-              type: 'issuance' as const,
-              from: 'MINT',
-              to: i.recipient,
-              amount: i.amount,
-              timestamp: i.created_at,
-              status: i.status,
-              slot: i.slot,
-            })),
-            ...sharePositionsData.map((sp: SharePosition) => ({
-              id: `share-${sp.id}`,
-              type: 'share_grant' as const,
-              from: 'GRANT',
-              to: sp.wallet,
-              amount: sp.shares,
-              timestamp: sp.acquired_at || sp.acquired_date || new Date().toISOString(),
-              status: 'completed',
-              slot: sp.slot,
-              shareClass: sp.share_class?.symbol || sp.share_class?.name,
-            })),
-          ]
+          // Convert unified transactions to activity feed
+          const activities: Activity[] = transactions.map(convertTransactionToActivity)
 
-          // Sort by timestamp descending
-          activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+          // Sort by slot descending (most recent first)
+          activities.sort((a, b) => (b.slot || 0) - (a.slot || 0))
           setAllActivity(activities)
         } else {
-          // Live data - use current cap table (fetch more items for pagination)
-          const [capTableData, proposalsData, transferStatsData, issuanceStatsData, transfersData, issuancesData, sharePositionsData] = await Promise.all([
+          // Live data - use current cap table and unified transactions
+          const [capTableData, proposalsData, transferStatsData, issuanceStatsData, transactions] = await Promise.all([
             api.getCapTable(selectedToken.tokenId),
             api.getProposals(selectedToken.tokenId, 'active').catch(() => []),
             api.getTransferStats(selectedToken.tokenId).catch(() => null),
             api.getIssuanceStats(selectedToken.tokenId).catch(() => null),
-            api.getRecentTransfers(selectedToken.tokenId, 50).catch(() => []),
-            api.getRecentIssuances(selectedToken.tokenId, 50).catch(() => []),
-            api.getRecentSharePositions(selectedToken.tokenId, 50).catch(() => []),
+            api.getUnifiedTransactions(selectedToken.tokenId, 100).catch(() => []),
           ])
           setCapTable(capTableData)
           setProposals(proposalsData)
           setTransferStats(transferStatsData)
           setIssuanceStats(issuanceStatsData)
 
-          // Combine transfers, token issuances, and share positions into activity feed
-          const activities: Activity[] = [
-            ...transfersData.map((t: Transfer) => ({
-              id: `transfer-${t.id}`,
-              type: 'transfer' as const,
-              from: t.from_wallet,
-              to: t.to_wallet,
-              amount: t.amount,
-              timestamp: t.block_time,
-              status: t.status,
-              slot: t.slot,
-            })),
-            ...issuancesData.map((i: TokenIssuance) => ({
-              id: `issuance-${i.id}`,
-              type: 'issuance' as const,
-              from: 'MINT',
-              to: i.recipient,
-              amount: i.amount,
-              timestamp: i.created_at,
-              status: i.status,
-              slot: i.slot,
-            })),
-            ...sharePositionsData.map((sp: SharePosition) => ({
-              id: `share-${sp.id}`,
-              type: 'share_grant' as const,
-              from: 'GRANT',
-              to: sp.wallet,
-              amount: sp.shares,
-              timestamp: sp.acquired_at || sp.acquired_date || new Date().toISOString(),
-              status: 'completed',
-              slot: sp.slot,
-              shareClass: sp.share_class?.symbol || sp.share_class?.name,
-            })),
-          ]
+          // Convert unified transactions to activity feed
+          const activities: Activity[] = transactions.map(convertTransactionToActivity)
 
-          // Sort by timestamp descending
-          activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+          // Sort by slot descending (most recent first)
+          activities.sort((a, b) => (b.slot || 0) - (a.slot || 0))
           setAllActivity(activities)
         }
       } catch (error: any) {
@@ -240,6 +178,11 @@ export default function DashboardPage() {
   const activity24h = isViewingHistorical
     ? allActivity.length
     : (transferStats?.transfers_24h ?? 0) + (issuanceStats?.issuances_24h ?? 0)
+
+  // Count activities by type for the stats display
+  const mintCount = allActivity.filter(a => a.type === 'mint').length
+  const transferCount = allActivity.filter(a => a.type === 'transfer').length
+  const shareGrantCount = allActivity.filter(a => a.type === 'share_grant').length
 
   return (
     <div className="space-y-6">
@@ -311,7 +254,7 @@ export default function DashboardPage() {
             </div>
             <p className="text-xs text-muted-foreground">
               {isViewingHistorical
-                ? `${allActivity.filter(a => a.type === 'issuance').length} mints, ${allActivity.filter(a => a.type === 'transfer').length} transfers, ${allActivity.filter(a => a.type === 'share_grant').length} grants`
+                ? `${mintCount} mints, ${transferCount} transfers, ${shareGrantCount} grants`
                 : `${issuanceStats?.issuances_24h ?? 0} mints, ${transferStats?.transfers_24h ?? 0} transfers`
               }
             </p>
@@ -388,8 +331,10 @@ export default function DashboardPage() {
             >
               <option value="all">All Activity</option>
               <option value="transfer">Transfers</option>
-              <option value="issuance">Mints</option>
+              <option value="mint">Mints</option>
               <option value="share_grant">Share Grants</option>
+              <option value="approval">Approvals</option>
+              <option value="other">Other</option>
             </select>
           </div>
         </CardHeader>
@@ -419,13 +364,21 @@ export default function DashboardPage() {
                       <tr key={activity.id} className="border-b last:border-0 hover:bg-muted/50">
                         <td className="py-2 px-2">
                           <span className={`text-xs px-1.5 py-0.5 rounded whitespace-nowrap ${
-                            activity.type === 'issuance'
+                            activity.type === 'mint'
                               ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
                               : activity.type === 'share_grant'
                               ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                              : activity.type === 'transfer'
+                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                              : activity.type === 'approval'
+                              ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+                              : 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400'
                           }`}>
-                            {activity.type === 'issuance' ? 'MINT' : activity.type === 'share_grant' ? 'SHARES' : 'TRANSFER'}
+                            {activity.type === 'mint' ? 'MINT'
+                              : activity.type === 'share_grant' ? 'SHARES'
+                              : activity.type === 'transfer' ? 'TRANSFER'
+                              : activity.type === 'approval' ? 'APPROVAL'
+                              : activity.type.toUpperCase()}
                           </span>
                           {activity.shareClass && (
                             <span className="text-xs text-muted-foreground ml-1">({activity.shareClass})</span>

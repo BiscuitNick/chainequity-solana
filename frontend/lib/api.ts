@@ -392,6 +392,15 @@ class ApiClient {
     return this.request<SharePosition[]>(url)
   }
 
+  // Unified Transactions API
+  async getUnifiedTransactions(tokenId: number, limit = 50, maxSlot?: number) {
+    let url = `/tokens/${tokenId}/transactions/?limit=${limit}`
+    if (maxSlot !== undefined) {
+      url += `&to_slot=${maxSlot}`
+    }
+    return this.request<UnifiedTransaction[]>(url)
+  }
+
   async issueShares(tokenId: number, data: IssueSharesRequest) {
     return this.request<IssueSharesResponse>(`/tokens/${tokenId}/share-classes/issue`, {
       method: 'POST',
@@ -865,6 +874,28 @@ export interface CorporateAction {
   executed_by: string
   signature?: string
   slot?: number
+}
+
+// Unified Transaction Type
+export interface UnifiedTransaction {
+  id: number
+  token_id: number
+  slot: number
+  tx_type: string
+  wallet: string | null
+  wallet_to: string | null
+  amount: number | null
+  amount_secondary: number | null
+  share_class_id: number | null
+  priority: number | null
+  preference_multiple: number | null
+  reference_id: number | null
+  reference_type: string | null
+  data: Record<string, any> | null
+  triggered_by: string | null
+  notes: string | null
+  tx_signature: string | null
+  created_at: string
 }
 
 // Investment Modeling Types
