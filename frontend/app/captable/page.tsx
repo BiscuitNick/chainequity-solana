@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/useAppStore'
 import { Download, RefreshCw, AlertTriangle } from 'lucide-react'
-import { api, CapTableResponse, ReconstructedState } from '@/lib/api'
+import { api, CapTableResponse, ReconstructedState, EnhancedCapTableResponse } from '@/lib/api'
 import { WalletAddress } from '@/components/WalletAddress'
 import { OwnershipDistribution } from '@/components/OwnershipDistribution'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -16,6 +16,7 @@ export default function CapTablePage() {
   const setSelectedSlot = useAppStore((state) => state.setSelectedSlot)
   const [capTable, setCapTable] = useState<CapTableResponse | null>(null)
   const [reconstructedState, setReconstructedState] = useState<ReconstructedState | null>(null)
+  const [enhancedCapTable, setEnhancedCapTable] = useState<EnhancedCapTableResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -123,6 +124,13 @@ export default function CapTablePage() {
           const data = await api.getCapTable(selectedToken.tokenId)
           setCapTable(data)
         }
+      }
+      // Also fetch enhanced cap table for price info (for live data only)
+      if (!isViewingHistorical) {
+        const enhancedData = await api.getEnhancedCapTable(selectedToken.tokenId).catch(() => null)
+        setEnhancedCapTable(enhancedData)
+      } else {
+        setEnhancedCapTable(null)
       }
     } catch (e: any) {
       console.error('Failed to fetch cap table:', e)
@@ -272,6 +280,8 @@ export default function CapTablePage() {
         loading={loading}
         title="Ownership Distribution"
         description="Top shareholders by ownership"
+        pricePerShare={enhancedCapTable?.price_per_share}
+        tokenId={selectedToken?.tokenId}
       />
 
       <Card>

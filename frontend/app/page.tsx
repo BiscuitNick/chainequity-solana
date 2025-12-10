@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useAppStore } from '@/stores/useAppStore'
-import api, { CapTableResponse, Proposal, TransferStatsResponse, IssuanceStatsResponse, UnifiedTransaction, ReconstructedState } from '@/lib/api'
+import api, { CapTableResponse, Proposal, TransferStatsResponse, IssuanceStatsResponse, UnifiedTransaction, ReconstructedState, EnhancedCapTableResponse } from '@/lib/api'
 import { WalletAddress } from '@/components/WalletAddress'
 import { OwnershipDistribution } from '@/components/OwnershipDistribution'
 import { AlertTriangle, Copy, History, Check, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react'
@@ -42,6 +42,7 @@ export default function DashboardPage() {
   const setSelectedSlot = useAppStore((state) => state.setSelectedSlot)
   const [capTable, setCapTable] = useState<CapTableResponse | null>(null)
   const [reconstructedState, setReconstructedState] = useState<ReconstructedState | null>(null)
+  const [enhancedCapTable, setEnhancedCapTable] = useState<EnhancedCapTableResponse | null>(null)
   const [proposals, setProposals] = useState<Proposal[]>([])
   const [transferStats, setTransferStats] = useState<TransferStatsResponse | null>(null)
   const [issuanceStats, setIssuanceStats] = useState<IssuanceStatsResponse | null>(null)
@@ -215,11 +216,14 @@ export default function DashboardPage() {
         } else {
           // Live data - use transaction-based state reconstruction for consistency
           // Get current slot first, then reconstruct state at that slot
-          const [currentSlotResponse, transactions, proposalsData] = await Promise.all([
+          const [currentSlotResponse, transactions, proposalsData, enhancedCapTableData] = await Promise.all([
             api.getCurrentSlot().catch(() => ({ slot: 0 })),
             api.getUnifiedTransactions(selectedToken.tokenId, 100).catch(() => []),
             api.getProposals(selectedToken.tokenId, 'active').catch(() => []),
+            api.getEnhancedCapTable(selectedToken.tokenId).catch(() => null),
           ])
+
+          setEnhancedCapTable(enhancedCapTableData)
 
           const currentSlot = currentSlotResponse.slot || 0
 
@@ -446,6 +450,8 @@ export default function DashboardPage() {
         loading={loading}
         title="Ownership Distribution"
         description="Token holder breakdown"
+        pricePerShare={enhancedCapTable?.price_per_share}
+        tokenId={selectedToken?.tokenId}
       />
 
       <Card>

@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Table2, PieChart as PieChartIcon, BarChart3 } from 'lucide-react'
+import { Table2, PieChart as PieChartIcon, BarChart3, ChevronDown, ChevronUp, RefreshCw, Copy, Check } from 'lucide-react'
 import { WalletAddress } from '@/components/WalletAddress'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { api, UnifiedTransaction } from '@/lib/api'
 import {
   PieChart,
   Pie,
@@ -13,7 +15,7 @@ import {
   Bar,
   XAxis,
   YAxis,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   ResponsiveContainer,
 } from 'recharts'
 
@@ -28,7 +30,19 @@ interface OwnershipDistributionProps {
   loading?: boolean
   title?: string
   description?: string
+  pricePerShare?: number // In cents
+  tokenId?: number // Required for fetching transactions
 }
+
+// Transaction types that affect share positions
+const SHARE_AFFECTING_TX_TYPES = [
+  'mint',
+  'share_grant',
+  'investment',
+  'vesting_release',
+  'convertible_convert',
+  'transfer',
+]
 
 const CHART_COLORS = [
   'hsl(221, 83%, 53%)',   // blue
@@ -51,6 +65,16 @@ function truncateWallet(wallet: string, isOthers: boolean): string {
   return `${wallet.slice(0, 8)}...${wallet.slice(-4)}`
 }
 
+// Helper to format cents as whole dollars (rounded)
+const formatDollarsRounded = (cents: number) => {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(Math.round(cents / 100))
+}
+
 interface CustomTooltipProps {
   active?: boolean
   payload?: Array<{
@@ -59,11 +83,13 @@ interface CustomTooltipProps {
       balance: number
       ownership_pct: number
       isOthers: boolean
+      totalValue?: number
     }
   }>
+  pricePerShare?: number
 }
 
-function CustomTooltip({ active, payload }: CustomTooltipProps) {
+function CustomTooltip({ active, payload, pricePerShare }: CustomTooltipProps) {
   if (!active || !payload || !payload.length) return null
 
   const data = payload[0].payload
@@ -73,8 +99,43 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
       <p className="text-muted-foreground">
         {data.balance.toLocaleString()} shares ({data.ownership_pct.toFixed(2)}%)
       </p>
+      {pricePerShare !== undefined && pricePerShare > 0 && (
+        <p className="text-muted-foreground">
+          Total: {formatDollarsRounded(data.balance * pricePerShare)}
+        </p>
+      )}
     </div>
   )
+}
+
+// Format transaction type for display
+const formatTxType = (txType: string, tx: UnifiedTransaction): string => {
+  switch (txType) {
+    case 'mint':
+    case 'share_grant':
+      // Check if it's a grant (free) or investment (paid)
+      return (tx.amount_secondary && tx.amount_secondary > 0) ? 'Investment' : 'Grant'
+    case 'investment':
+      return 'Investment'
+    case 'vesting_release':
+      return 'Vesting'
+    case 'convertible_convert':
+      return 'Conversion'
+    case 'transfer':
+      return tx.wallet === tx.wallet_to ? 'Transfer In' : 'Transfer Out'
+    default:
+      return txType.replace('_', ' ')
+  }
+}
+
+// Calculate shares in/out for display
+const getSharesDisplay = (tx: UnifiedTransaction, wallet: string): { shares: number, isPositive: boolean } => {
+  const isInbound = tx.tx_type === 'transfer' ? tx.wallet_to === wallet : true
+  const shares = tx.amount || 0
+  return {
+    shares,
+    isPositive: isInbound,
+  }
 }
 
 export function OwnershipDistribution({
@@ -82,8 +143,60 @@ export function OwnershipDistribution({
   loading = false,
   title = 'Ownership Distribution',
   description = 'Top shareholders by ownership',
+  pricePerShare,
+  tokenId,
 }: OwnershipDistributionProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('table')
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const [walletTransactions, setWalletTransactions] = useState<Record<string, UnifiedTransaction[]>>({})
+  const [loadingTransactions, setLoadingTransactions] = useState<Set<string>>(new Set())
+  const [copiedSlot, setCopiedSlot] = useState<number | null>(null)
+
+  const toggleRowExpanded = async (wallet: string) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev)
+      if (next.has(wallet)) {
+        next.delete(wallet)
+      } else {
+        next.add(wallet)
+        // Fetch transactions for this wallet if not already loaded
+        if (!walletTransactions[wallet] && tokenId !== undefined) {
+          fetchWalletTransactions(wallet)
+        }
+      }
+      return next
+    })
+  }
+
+  const fetchWalletTransactions = async (wallet: string) => {
+    if (tokenId === undefined) return
+    setLoadingTransactions(prev => new Set(prev).add(wallet))
+    try {
+      const transactions = await api.getUnifiedTransactions(tokenId, 100, undefined, undefined, wallet)
+      // Filter to only share-affecting transactions
+      const shareTransactions = transactions.filter(tx =>
+        SHARE_AFFECTING_TX_TYPES.includes(tx.tx_type)
+      )
+      setWalletTransactions(prev => ({
+        ...prev,
+        [wallet]: shareTransactions,
+      }))
+    } catch (e) {
+      console.error('Failed to fetch wallet transactions:', e)
+    } finally {
+      setLoadingTransactions(prev => {
+        const next = new Set(prev)
+        next.delete(wallet)
+        return next
+      })
+    }
+  }
+
+  const copySlotToClipboard = (slot: number) => {
+    navigator.clipboard.writeText(slot.toString())
+    setCopiedSlot(slot)
+    setTimeout(() => setCopiedSlot(null), 2000)
+  }
 
   // Process holders: top 10 + Others
   const processedData = useMemo(() => {
@@ -100,6 +213,7 @@ export function OwnershipDistribution({
       color: CHART_COLORS[idx],
       isOthers: false,
       name: truncateWallet(h.wallet, false),
+      totalValue: pricePerShare ? h.balance * pricePerShare : undefined,
     }))
 
     if (others.length > 0) {
@@ -113,11 +227,14 @@ export function OwnershipDistribution({
         color: CHART_COLORS[10],
         isOthers: true,
         name: othersName,
+        totalValue: pricePerShare ? othersTotal * pricePerShare : undefined,
       })
     }
 
     return result
-  }, [holders])
+  }, [holders, pricePerShare])
+
+  const showTotalColumn = pricePerShare !== undefined && pricePerShare > 0
 
   return (
     <Card>
@@ -166,42 +283,184 @@ export function OwnershipDistribution({
             <p className="text-muted-foreground">No holders yet</p>
           </div>
         ) : viewMode === 'table' ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-2 px-2 font-medium">Shareholder</th>
-                  <th className="text-right py-2 px-2 font-medium">Shares</th>
-                  <th className="text-right py-2 px-2 font-medium">% Owned</th>
-                </tr>
-              </thead>
-              <tbody>
-                {processedData.map((item, idx) => (
-                  <tr key={idx} className="border-b last:border-0 hover:bg-muted/50">
-                    <td className="py-2 px-2">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-3 h-3 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: item.color }}
-                        />
-                        {item.isOthers ? (
-                          <span className="text-muted-foreground">{item.wallet}</span>
-                        ) : (
-                          <WalletAddress address={item.wallet} />
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-2 px-2 text-right font-medium">
-                      {item.balance.toLocaleString()}
-                    </td>
-                    <td className="py-2 px-2 text-right">
-                      {item.ownership_pct.toFixed(2)}%
-                    </td>
+          <TooltipProvider>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-3 px-4 font-medium">Shareholder</th>
+                    <th className="text-right py-3 px-4 font-medium">Shares</th>
+                    <th className="text-right py-3 px-4 font-medium">% Owned</th>
+                    {showTotalColumn && (
+                      <th className="text-right py-3 px-4 font-medium">Total</th>
+                    )}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {processedData.map((item, idx) => {
+                    const isExpanded = expandedRows.has(item.wallet)
+                    const transactions = walletTransactions[item.wallet] || []
+                    const isLoadingTx = loadingTransactions.has(item.wallet)
+                    const canExpand = !item.isOthers && tokenId !== undefined
+
+                    return (
+                      <Fragment key={idx}>
+                        <tr
+                          className={`border-b hover:bg-muted/50 ${canExpand ? 'cursor-pointer' : ''}`}
+                          onClick={() => canExpand && toggleRowExpanded(item.wallet)}
+                        >
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-1">
+                              {canExpand ? (
+                                isExpanded ? (
+                                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                                ) : (
+                                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                )
+                              ) : (
+                                <div className="w-4" />
+                              )}
+                              <div
+                                className="w-3 h-3 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: item.color }}
+                              />
+                              {item.isOthers ? (
+                                <span className="text-muted-foreground">{item.wallet}</span>
+                              ) : (
+                                <WalletAddress address={item.wallet} />
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-right font-medium">
+                            {item.balance.toLocaleString()}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            {item.ownership_pct.toFixed(2)}%
+                          </td>
+                          {showTotalColumn && (
+                            <td className="py-3 px-4 text-right font-medium">
+                              {item.totalValue !== undefined ? formatDollarsRounded(item.totalValue) : '—'}
+                            </td>
+                          )}
+                        </tr>
+
+                        {/* Expanded transaction details */}
+                        {isExpanded && !item.isOthers && (
+                          <tr className="bg-muted/30">
+                            <td colSpan={showTotalColumn ? 4 : 3} className="py-3 px-4">
+                              <div className="space-y-3">
+                                <h4 className="font-medium text-sm">Transaction History</h4>
+                                {isLoadingTx ? (
+                                  <div className="flex items-center gap-2 py-4">
+                                    <RefreshCw className="h-4 w-4 animate-spin" />
+                                    <span className="text-sm text-muted-foreground">Loading transactions...</span>
+                                  </div>
+                                ) : transactions.length === 0 ? (
+                                  <p className="text-sm text-muted-foreground py-2">No transaction history found</p>
+                                ) : (
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                      <thead>
+                                        <tr className="border-b">
+                                          <th className="text-left py-2 px-2 font-medium">Type</th>
+                                          <th className="text-right py-2 px-2 font-medium">Shares In</th>
+                                          <th className="text-right py-2 px-2 font-medium">Shares Out</th>
+                                          <th className="text-left py-2 px-2 font-medium">Date</th>
+                                          <th className="text-left py-2 px-2 font-medium">Slot</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {transactions.map(tx => {
+                                          const { shares, isPositive } = getSharesDisplay(tx, item.wallet)
+                                          return (
+                                            <tr key={tx.id} className="border-b last:border-0">
+                                              <td className="py-2 px-2">
+                                                <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                                  tx.tx_type === 'transfer' && !isPositive
+                                                    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                                    : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                                                }`}>
+                                                  {formatTxType(tx.tx_type, tx)}
+                                                </span>
+                                              </td>
+                                              <td className="py-2 px-2 text-right font-medium text-green-600">
+                                                {isPositive && shares > 0 ? `+${shares.toLocaleString()}` : '—'}
+                                              </td>
+                                              <td className="py-2 px-2 text-right font-medium text-red-600">
+                                                {!isPositive && shares > 0 ? `-${shares.toLocaleString()}` : '—'}
+                                              </td>
+                                              <td className="py-2 px-2 text-muted-foreground text-xs">
+                                                {new Date(tx.created_at).toLocaleDateString()}
+                                              </td>
+                                              <td className="py-2 px-2">
+                                                <div className="flex items-center gap-1">
+                                                  <span className="text-xs font-mono">#{tx.slot.toLocaleString()}</span>
+                                                  <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                      <button
+                                                        onClick={(e) => {
+                                                          e.stopPropagation()
+                                                          copySlotToClipboard(tx.slot)
+                                                        }}
+                                                        className="p-0.5 hover:bg-muted rounded"
+                                                      >
+                                                        {copiedSlot === tx.slot ? (
+                                                          <Check className="h-3 w-3 text-green-500" />
+                                                        ) : (
+                                                          <Copy className="h-3 w-3 text-muted-foreground" />
+                                                        )}
+                                                      </button>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>Copy slot ID</TooltipContent>
+                                                  </Tooltip>
+                                                </div>
+                                              </td>
+                                            </tr>
+                                          )
+                                        })}
+                                      </tbody>
+                                      <tfoot>
+                                        <tr className="border-t font-medium">
+                                          <td className="py-2 px-2">Total</td>
+                                          <td className="py-2 px-2 text-right text-green-600">
+                                            +{transactions
+                                              .filter(tx => getSharesDisplay(tx, item.wallet).isPositive)
+                                              .reduce((sum, tx) => sum + (tx.amount || 0), 0)
+                                              .toLocaleString()}
+                                          </td>
+                                          <td className="py-2 px-2 text-right text-red-600">
+                                            -{transactions
+                                              .filter(tx => !getSharesDisplay(tx, item.wallet).isPositive)
+                                              .reduce((sum, tx) => sum + (tx.amount || 0), 0)
+                                              .toLocaleString()}
+                                          </td>
+                                          <td colSpan={2} className="py-2 px-2 text-right">
+                                            <span className="text-muted-foreground">Net: </span>
+                                            <span className="font-bold">
+                                              {(
+                                                transactions.filter(tx => getSharesDisplay(tx, item.wallet).isPositive)
+                                                  .reduce((sum, tx) => sum + (tx.amount || 0), 0) -
+                                                transactions.filter(tx => !getSharesDisplay(tx, item.wallet).isPositive)
+                                                  .reduce((sum, tx) => sum + (tx.amount || 0), 0)
+                                              ).toLocaleString()}
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      </tfoot>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </TooltipProvider>
         ) : viewMode === 'pie' ? (
           <div className="flex flex-col md:flex-row items-center gap-6">
             {/* Pie Chart */}
@@ -222,7 +481,7 @@ export function OwnershipDistribution({
                       <Cell key={idx} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip content={<CustomTooltip />} />
+                  <RechartsTooltip content={<CustomTooltip pricePerShare={pricePerShare} />} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -266,7 +525,7 @@ export function OwnershipDistribution({
                   fontSize={11}
                   tickLine={false}
                 />
-                <Tooltip content={<CustomTooltip />} />
+                <RechartsTooltip content={<CustomTooltip pricePerShare={pricePerShare} />} />
                 <Bar dataKey="ownership_pct" radius={[0, 4, 4, 0]}>
                   {processedData.map((entry, idx) => (
                     <Cell key={idx} fill={entry.color} />
