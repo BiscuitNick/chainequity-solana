@@ -266,7 +266,6 @@ async def convert_convertible(
             token_id=token_id,
             address=convertible.holder_wallet,
             status="active",
-            kyc_level=1,
             approved_at=datetime.utcnow(),
         )
         db.add(wallet)

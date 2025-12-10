@@ -21,6 +21,7 @@ import {
   Users,
   DollarSign,
   Trash2,
+  Clock,
 } from 'lucide-react'
 import {
   api,
@@ -28,7 +29,9 @@ import {
   SharePosition,
   IssueSharesRequest,
   CreateShareClassRequest,
+  ReconstructedState,
 } from '@/lib/api'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { WalletAddress } from '@/components/WalletAddress'
 
 // Prepopulated share class templates
@@ -70,6 +73,7 @@ const formatDollars = (cents: number) => {
 
 export default function IssuancePage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
+  const selectedSlot = useAppStore((state) => state.selectedSlot)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -78,6 +82,9 @@ export default function IssuancePage() {
   const [shareClasses, setShareClasses] = useState<ShareClass[]>([])
   const [positions, setPositions] = useState<SharePosition[]>([])
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null)
+  const [reconstructedState, setReconstructedState] = useState<ReconstructedState | null>(null)
+
+  const isHistoricalView = selectedSlot !== null
 
   // Form states
   const [recipientWallet, setRecipientWallet] = useState('')
@@ -101,21 +108,51 @@ export default function IssuancePage() {
     if (!selectedToken) return
     setLoading(true)
     setError(null)
+    setReconstructedState(null)
     try {
       const classes = await api.getShareClasses(selectedToken.tokenId)
       setShareClasses(classes)
 
-      // Load positions for all classes
-      const allPositions: SharePosition[] = []
-      for (const sc of classes) {
-        try {
-          const classPositions = await api.getSharePositions(selectedToken.tokenId, sc.id)
-          allPositions.push(...classPositions)
-        } catch (e) {
-          // Ignore errors for individual classes
+      if (isHistoricalView && selectedSlot !== null) {
+        // Historical view - use transaction reconstruction
+        const state = await api.getReconstructedStateAtSlot(selectedToken.tokenId, selectedSlot)
+        setReconstructedState(state)
+
+        // Convert reconstructed state to positions format
+        // The API returns positions as an array with wallet, share_class_id, shares, cost_basis, etc.
+        const allPositions: SharePosition[] = []
+        if (Array.isArray(state.positions)) {
+          for (const posState of state.positions) {
+            const shareClass = classes.find(c => c.id === posState.share_class_id)
+            if (posState.shares > 0) {
+              allPositions.push({
+                id: 0, // Not available in reconstructed state
+                wallet: posState.wallet,
+                shares: posState.shares,
+                cost_basis: posState.cost_basis,
+                price_per_share: posState.shares > 0 ? Math.round(posState.cost_basis / posState.shares) : 0,
+                share_class: shareClass || null,
+                preference_amount: shareClass ? posState.cost_basis * shareClass.preference_multiple : posState.cost_basis,
+                current_value: posState.shares * (selectedToken.currentPricePerShare || 0),
+              })
+            }
+          }
         }
+        setPositions(allPositions)
+      } else {
+        // Live view - use direct API calls for accurate position data
+        // Fallback to direct API calls
+        const allPositions: SharePosition[] = []
+        for (const sc of classes) {
+          try {
+            const classPositions = await api.getSharePositions(selectedToken.tokenId, sc.id)
+            allPositions.push(...classPositions)
+          } catch (e) {
+            // Ignore errors for individual classes
+          }
+        }
+        setPositions(allPositions)
       }
-      setPositions(allPositions)
     } catch (e: any) {
       console.error('Failed to fetch share classes:', e)
       setError(e.detail || 'Failed to fetch share classes')
@@ -266,7 +303,7 @@ export default function IssuancePage() {
 
   useEffect(() => {
     fetchData()
-  }, [selectedToken])
+  }, [selectedToken, selectedSlot])
 
   useEffect(() => {
     // Clear success message after 5 seconds
@@ -308,6 +345,17 @@ export default function IssuancePage() {
           Refresh
         </Button>
       </div>
+
+      {isHistoricalView && (
+        <Alert className="border-amber-500/50 bg-amber-500/10">
+          <Clock className="h-4 w-4" />
+          <AlertTitle>Viewing Historical Data</AlertTitle>
+          <AlertDescription>
+            Showing share positions reconstructed at slot {selectedSlot?.toLocaleString()}.
+            {reconstructedState && ` Total supply: ${reconstructedState.total_supply.toLocaleString()} shares, ${reconstructedState.holder_count} holders.`}
+          </AlertDescription>
+        </Alert>
+      )}
 
       {error && (
         <Card className="border-red-500/50 bg-red-500/10">

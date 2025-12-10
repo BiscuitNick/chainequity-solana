@@ -377,6 +377,24 @@ export default function InvestmentsPage() {
     }
   }
 
+  // Convert a convertible instrument at a funding round
+  const handleConvertInstrument = async (convertibleId: number) => {
+    if (!selectedToken || !selectedRound) return
+    setModalLoading(true)
+    setModalError(null)
+    try {
+      await api.convertInstrument(selectedToken.tokenId, convertibleId, selectedRound.id)
+      // Refresh the round data and convertibles
+      const updatedRound = await api.getFundingRound(selectedToken.tokenId, selectedRound.id)
+      setSelectedRound(updatedRound)
+      fetchData()
+    } catch (e: any) {
+      setModalError(e.detail || 'Failed to convert instrument')
+    } finally {
+      setModalLoading(false)
+    }
+  }
+
   // Open round detail modal
   const openRoundDetail = (round: FundingRound) => {
     setSelectedRound(round)
@@ -1413,6 +1431,59 @@ export default function InvestmentsPage() {
                     {modalLoading ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
                     Add Investment
                   </Button>
+                </div>
+              )}
+
+              {/* Convert Outstanding SAFEs/Notes (only for pending rounds with outstanding convertibles) */}
+              {selectedRound.status === 'pending' && convertibles.filter(c => c.status === 'outstanding').length > 0 && (
+                <div className="border-t pt-4">
+                  <h3 className="font-semibold mb-3 flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Convert SAFEs/Notes at This Round
+                  </h3>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Convert outstanding convertible instruments to shares at this round&apos;s valuation
+                  </p>
+                  <div className="space-y-2">
+                    {convertibles.filter(c => c.status === 'outstanding').map((conv) => {
+                      // Calculate conversion preview
+                      const effectivePrice = selectedRound.price_per_share > 0 ? selectedRound.price_per_share : 0
+                      const discountedPrice = conv.discount_rate ? effectivePrice * (1 - conv.discount_rate) : effectivePrice
+                      const cappedPrice = conv.valuation_cap && totalShares > 0
+                        ? (conv.valuation_cap * 100) / totalShares
+                        : Infinity
+                      const conversionPrice = Math.min(discountedPrice, cappedPrice)
+                      const estimatedShares = conversionPrice > 0 ? Math.floor(conv.accrued_amount / conversionPrice) : 0
+
+                      return (
+                        <div key={conv.id} className="flex items-center justify-between p-3 border rounded bg-muted/30">
+                          <div className="flex-1">
+                            <p className="font-medium">
+                              {conv.name || conv.instrument_type.toUpperCase()}
+                              {conv.holder_name && ` - ${conv.holder_name}`}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatDollars(conv.accrued_amount)}
+                              {conv.valuation_cap && ` | Cap: ${formatDollars(conv.valuation_cap)}`}
+                              {conv.discount_rate && ` | ${(conv.discount_rate * 100).toFixed(0)}% discount`}
+                            </p>
+                            {effectivePrice > 0 && (
+                              <p className="text-xs text-green-600 mt-1">
+                                Est. {estimatedShares.toLocaleString()} shares @ {formatDollarsDetailed(conversionPrice)}/share
+                              </p>
+                            )}
+                          </div>
+                          <Button
+                            size="sm"
+                            onClick={() => handleConvertInstrument(conv.id)}
+                            disabled={modalLoading}
+                          >
+                            {modalLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : 'Convert'}
+                          </Button>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               )}
             </div>
