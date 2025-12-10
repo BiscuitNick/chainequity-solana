@@ -391,13 +391,16 @@ class ApiClient {
   }
 
   // Unified Transactions API
-  async getUnifiedTransactions(tokenId: number, limit = 50, maxSlot?: number, txType?: string) {
+  async getUnifiedTransactions(tokenId: number, limit = 50, maxSlot?: number, txType?: string, wallet?: string) {
     let url = `/tokens/${tokenId}/transactions/?limit=${limit}`
     if (maxSlot !== undefined) {
       url += `&to_slot=${maxSlot}`
     }
     if (txType !== undefined) {
       url += `&tx_type=${txType}`
+    }
+    if (wallet !== undefined) {
+      url += `&wallet=${wallet}`
     }
     return this.request<UnifiedTransaction[]>(url)
   }

@@ -19,7 +19,6 @@ import {
   RefreshCw,
   Layers,
   Users,
-  DollarSign,
   Trash2,
   Clock,
 } from 'lucide-react'
@@ -33,8 +32,8 @@ import {
   AllowlistEntry,
 } from '@/lib/api'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { WalletAddress } from '@/components/WalletAddress'
 import { ApprovedWalletSelector } from '@/components/ApprovedWalletSelector'
+import { SharePositions } from '@/components/SharePositions'
 
 // Prepopulated share class templates
 // Priority: Lower number = higher priority in liquidation waterfall
@@ -49,16 +48,6 @@ const SHARE_CLASS_TEMPLATES: CreateShareClassRequest[] = [
 
 // Default share class - vested shares convert to this
 const DEFAULT_SHARE_CLASS = SHARE_CLASS_TEMPLATES[0] // Common
-
-// Helper to format cents as dollars
-const formatDollars = (cents: number) => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(cents / 100)
-}
 
 export default function IssuancePage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
@@ -729,100 +718,14 @@ export default function IssuancePage() {
         </Card>
       </div>
 
-      {/* Positions Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Share Positions</CardTitle>
-          <CardDescription>
-            All shareholders and their positions across share classes
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex justify-center py-8">
-              <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : positions.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">
-              No shares have been issued yet
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-medium">Wallet</th>
-                    <th className="text-left py-3 px-4 font-medium">Share Class</th>
-                    <th className="text-center py-3 px-4 font-medium">Priority</th>
-                    <th className="text-right py-3 px-4 font-medium">Shares</th>
-                    <th className="text-right py-3 px-4 font-medium">Cost Basis</th>
-                    <th className="text-right py-3 px-4 font-medium">Current Value</th>
-                    <th className="text-right py-3 px-4 font-medium">Liq. Preference</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {positions.map((position, idx) => {
-                    const shareClass = position.share_class
-                    const preference = position.preference_amount ?? (
-                      shareClass
-                        ? position.cost_basis * shareClass.preference_multiple
-                        : position.cost_basis
-                    )
-                    // Current value from API, or fall back to cost basis if not available
-                    const currentValue = position.current_value ?? position.cost_basis
-                    return (
-                      <tr key={idx} className="border-b hover:bg-muted/50">
-                        <td className="py-3 px-4">
-                          <WalletAddress address={position.wallet} />
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className={`px-2 py-1 rounded text-xs ${
-                            shareClass?.priority === 0 ? 'bg-red-500/10 text-red-500' :
-                            (shareClass?.priority ?? 99) < 50 ? 'bg-blue-500/10 text-blue-500' :
-                            'bg-gray-500/10 text-gray-500'
-                          }`}>
-                            {shareClass?.symbol || 'Unknown'}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <span className={`px-2 py-0.5 rounded text-xs ${
-                            (shareClass?.priority ?? 99) === 0 ? 'bg-red-500/10 text-red-500' :
-                            (shareClass?.priority ?? 99) < 50 ? 'bg-yellow-500/10 text-yellow-600' :
-                            'bg-gray-500/10 text-gray-500'
-                          }`}>
-                            {shareClass?.priority ?? 99}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right font-medium">
-                          {position.shares.toLocaleString()}
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <div>{formatDollars(position.cost_basis)}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {formatDollars(position.shares > 0 ? Math.round(position.cost_basis / position.shares) : 0)}/share
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <div>{formatDollars(currentValue)}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {formatDollars(position.shares > 0 ? Math.round(currentValue / position.shares) : 0)}/share
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <div>{formatDollars(preference)}</div>
-                          <span className="text-xs text-muted-foreground">
-                            ({shareClass?.preference_multiple || 1}x)
-                          </span>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Share Positions Table */}
+      <SharePositions
+        tokenId={selectedToken.tokenId}
+        positions={positions}
+        shareClasses={shareClasses}
+        loading={loading}
+        onRefresh={fetchData}
+      />
     </div>
   )
 }
