@@ -21,7 +21,6 @@ interface TokenInfo {
   symbol: string
   name: string
   mintAddress: string
-  authorizedSupply: number
   issuedSupply: number
   decimals: number
   holders: number
@@ -102,7 +101,6 @@ export default function TokensPage() {
               symbol: t.symbol,
               name: t.name,
               mintAddress: t.mint_address,
-              authorizedSupply: parseInt(t.total_supply),
               issuedSupply,
               decimals: t.decimals || 6,
               holders,
@@ -236,14 +234,10 @@ export default function TokensPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-3 gap-4 text-sm">
+              <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <p className="text-muted-foreground">Issued</p>
+                  <p className="text-muted-foreground">Supply</p>
                   <p className="font-medium">{token.issuedSupply.toLocaleString()}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Authorized</p>
-                  <p className="font-medium">{token.authorizedSupply.toLocaleString()}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Holders</p>

@@ -104,9 +104,9 @@ async def create_token(request: CreateTokenRequest, db: AsyncSession = Depends(g
     if request.decimals < 0 or request.decimals > 18:
         raise HTTPException(status_code=400, detail="Decimals must be 0-18")
 
-    # Validate initial supply
-    if request.initial_supply <= 0:
-        raise HTTPException(status_code=400, detail="Initial supply must be positive")
+    # Validate initial supply (0 is allowed - supply grows as shares are issued)
+    if request.initial_supply < 0:
+        raise HTTPException(status_code=400, detail="Initial supply cannot be negative")
 
     # Validate multi-sig configuration
     if request.admin_threshold < 1:

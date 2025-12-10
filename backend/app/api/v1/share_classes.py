@@ -493,6 +493,9 @@ async def issue_shares(
         notes=request.notes,
     )
 
+    # Update token total supply (all share issuances increase supply)
+    token.total_supply = (token.total_supply or 0) + request.shares
+
     await db.commit()
     await db.refresh(position)
     await db.refresh(grant)
