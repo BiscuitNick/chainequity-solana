@@ -38,24 +38,11 @@ import { WalletAddress } from '@/components/WalletAddress'
 // Priority: Lower number = higher priority in liquidation waterfall
 // Preference Multiple: 1 = 1x liquidation preference, 2 = 2x, etc.
 const SHARE_CLASS_TEMPLATES: CreateShareClassRequest[] = [
-  // Common stock - lowest priority, default for vested shares
-  { name: 'Common', symbol: 'COM', priority: 90, preference_multiple: 1 },
-  // Seed rounds
-  { name: 'Seed', symbol: 'S1x', priority: 80, preference_multiple: 1 },
-  { name: 'Seed', symbol: 'S2x', priority: 80, preference_multiple: 2 },
-  { name: 'Seed', symbol: 'S3x', priority: 80, preference_multiple: 3 },
-  // Series A
-  { name: 'Series A', symbol: 'A1x', priority: 70, preference_multiple: 1 },
-  { name: 'Series A', symbol: 'A2x', priority: 70, preference_multiple: 2 },
-  { name: 'Series A', symbol: 'A3x', priority: 70, preference_multiple: 3 },
-  // Series B
-  { name: 'Series B', symbol: 'B1x', priority: 60, preference_multiple: 1 },
-  { name: 'Series B', symbol: 'B2x', priority: 60, preference_multiple: 2 },
-  { name: 'Series B', symbol: 'B3x', priority: 60, preference_multiple: 3 },
-  // Series C
-  { name: 'Series C', symbol: 'C1x', priority: 50, preference_multiple: 1 },
-  { name: 'Series C', symbol: 'C2x', priority: 50, preference_multiple: 2 },
-  { name: 'Series C', symbol: 'C3x', priority: 50, preference_multiple: 3 },
+  { name: 'Common', symbol: 'COM', priority: 9, preference_multiple: 1 },
+  { name: 'Seed', symbol: 'S1X', priority: 8, preference_multiple: 1 },
+  { name: 'Series A', symbol: 'A1X', priority: 7, preference_multiple: 1 },
+  { name: 'Series B', symbol: 'B2X', priority: 6, preference_multiple: 2 },
+  { name: 'Series C', symbol: 'C3X', priority: 5, preference_multiple: 3 },
 ]
 
 // Default share class - vested shares convert to this
@@ -653,7 +640,7 @@ export default function IssuancePage() {
                   No share classes configured.
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Click &quot;Initialize Standard&quot; to create Common, Seed, Series A, B, and C classes with 1x-3x preferences.
+                  Click &quot;Initialize Standard&quot; to create Common, Seed, Series A, B, and C share classes.
                 </p>
               </div>
             ) : (
