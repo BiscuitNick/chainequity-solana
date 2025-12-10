@@ -20,6 +20,7 @@ from solders.pubkey import Pubkey
 from app.services.history import HistoryService
 from app.services.solana_client import get_solana_client
 from app.services.transaction_service import TransactionService
+from app.models.unified_transaction import UnifiedTransaction, TransactionType
 import structlog
 
 router = APIRouter()
@@ -291,6 +292,13 @@ async def process_distributions(round_id: int, token_id: int):
             if not round_obj:
                 return
 
+            # Get current slot for transaction recording
+            try:
+                solana_client = await get_solana_client()
+                current_slot = await solana_client.get_slot()
+            except Exception:
+                current_slot = round_obj.snapshot_slot or 0
+
             # Process each batch
             for batch_num in range(round_obj.total_batches):
                 # Get pending payments for this batch
@@ -315,6 +323,27 @@ async def process_distributions(round_id: int, token_id: int):
                         payment.distributed_at = datetime.utcnow()
                         payment.signature = f"demo_sig_{round_id}_{payment.id}"
 
+                        # Create unified transaction for this payment
+                        unified_tx = UnifiedTransaction(
+                            token_id=token_id,
+                            slot=current_slot,
+                            tx_type=TransactionType.DIVIDEND_PAYMENT,
+                            wallet=round_obj.payment_token,  # From (payment token)
+                            wallet_to=payment.wallet,  # To (shareholder)
+                            amount=payment.amount,
+                            reference_id=round_id,
+                            reference_type="dividend_round",
+                            tx_signature=payment.signature,
+                            data={
+                                "round_number": round_obj.round_number,
+                                "shares": payment.shares,
+                                "dividend_per_share": round_obj.amount_per_share,
+                                "payment_token": round_obj.payment_token,
+                            },
+                            notes=f"Dividend payment from round #{round_obj.round_number}",
+                        )
+                        db.add(unified_tx)
+
                     except Exception as e:
                         payment.status = "failed"
                         payment.error_message = str(e)[:500]
@@ -330,6 +359,7 @@ async def process_distributions(round_id: int, token_id: int):
 
         except Exception as e:
             # Mark round as failed if something goes wrong
+            logger.error("Dividend distribution failed", error=str(e), round_id=round_id)
             try:
                 result = await db.execute(
                     select(DividendRound).where(DividendRound.id == round_id)
@@ -397,6 +427,21 @@ async def retry_distributions(round_id: int):
 
     async with async_session_factory() as db:
         try:
+            # Get round info
+            result = await db.execute(
+                select(DividendRound).where(DividendRound.id == round_id)
+            )
+            round_obj = result.scalar_one_or_none()
+            if not round_obj:
+                return
+
+            # Get current slot
+            try:
+                solana_client = await get_solana_client()
+                current_slot = await solana_client.get_slot()
+            except Exception:
+                current_slot = round_obj.snapshot_slot or 0
+
             result = await db.execute(
                 select(DividendPayment).where(
                     DividendPayment.round_id == round_id,
@@ -411,6 +456,28 @@ async def retry_distributions(round_id: int):
                     payment.status = "sent"
                     payment.distributed_at = datetime.utcnow()
                     payment.signature = f"retry_sig_{round_id}_{payment.id}"
+
+                    # Create unified transaction for retry payment
+                    unified_tx = UnifiedTransaction(
+                        token_id=round_obj.token_id,
+                        slot=current_slot,
+                        tx_type=TransactionType.DIVIDEND_PAYMENT,
+                        wallet=round_obj.payment_token,
+                        wallet_to=payment.wallet,
+                        amount=payment.amount,
+                        reference_id=round_id,
+                        reference_type="dividend_round",
+                        tx_signature=payment.signature,
+                        data={
+                            "round_number": round_obj.round_number,
+                            "shares": payment.shares,
+                            "dividend_per_share": round_obj.amount_per_share,
+                            "payment_token": round_obj.payment_token,
+                            "retry": True,
+                        },
+                        notes=f"Retry dividend payment from round #{round_obj.round_number}",
+                    )
+                    db.add(unified_tx)
                 except Exception as e:
                     payment.status = "failed"
                     payment.error_message = str(e)[:500]

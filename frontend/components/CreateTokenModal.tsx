@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch'
 import { X, Info, Plus, Trash2, Shield, Settings, Coins, CheckCircle, AlertCircle } from 'lucide-react'
 import { useSolanaWallet } from '@/hooks/useSolana'
 import { api } from '@/lib/api'
+import { UseWalletButton } from '@/components/UseWalletButton'
 
 interface CreateTokenModalProps {
   isOpen: boolean
@@ -284,15 +285,11 @@ export function CreateTokenModal({ isOpen, onClose, onSuccess }: CreateTokenModa
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label>Admin Signers *</Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={useConnectedWallet}
-                      disabled={!publicKey || signers[0] !== ''}
-                    >
-                      Use My Wallet
-                    </Button>
+                    <UseWalletButton
+                      publicKey={publicKey?.toString() || null}
+                      currentValue={signers[0]}
+                      onUseWallet={useConnectedWallet}
+                    />
                   </div>
 
                   <div className="space-y-2">

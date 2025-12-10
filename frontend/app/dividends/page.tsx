@@ -12,6 +12,8 @@ import { Plus, DollarSign, RefreshCw, AlertCircle, CheckCircle, Clock, XCircle, 
 import { api, DividendRound, DividendPayment, UnifiedTransaction } from '@/lib/api'
 import { WalletAddress } from '@/components/WalletAddress'
 import { Button as ToastButton } from '@/components/ui/button'
+import { UseWalletButton } from '@/components/UseWalletButton'
+import { useSolanaWallet } from '@/hooks/useSolana'
 
 // Helper to format dates nicely
 const formatDate = (dateStr: string | null | undefined) => {
@@ -34,6 +36,7 @@ export default function DividendsPage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
   const selectedSlot = useAppStore((state) => state.selectedSlot)
   const setSelectedSlot = useAppStore((state) => state.setSelectedSlot)
+  const { publicKey } = useSolanaWallet()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [dividendRounds, setDividendRounds] = useState<DividendRound[]>([])
   const [loading, setLoading] = useState(false)
@@ -52,7 +55,7 @@ export default function DividendsPage() {
   const isViewingHistorical = selectedSlot !== null
 
   // Create distribution form state
-  const [totalPool, setTotalPool] = useState('')
+  const [perShareAmount, setPerShareAmount] = useState('')
   const [paymentToken, setPaymentToken] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -178,19 +181,30 @@ export default function DividendsPage() {
   }
 
   const resetForm = () => {
-    setTotalPool('')
+    setPerShareAmount('')
     setPaymentToken('')
   }
 
+  const useConnectedWallet = () => {
+    if (publicKey && paymentToken === '') {
+      setPaymentToken(publicKey.toString())
+    }
+  }
+
+  // Calculate total distribution amount from per share * total shares
+  const calculatedTotalPool = perShareAmount && mintedShares > 0
+    ? Math.round(parseFloat(perShareAmount) * 100 * mintedShares) / 100
+    : 0
+
   const handleCreateDistribution = async () => {
-    if (!selectedToken || !totalPool || !paymentToken) return
+    if (!selectedToken || !perShareAmount || !paymentToken || calculatedTotalPool <= 0) return
 
     setSubmitting(true)
     setError(null)
 
     try {
       await api.createDividendRound(selectedToken.tokenId, {
-        total_pool: parseInt(totalPool),
+        total_pool: calculatedTotalPool,
         payment_token: paymentToken,
       })
       setShowCreateModal(false)
@@ -204,11 +218,6 @@ export default function DividendsPage() {
       setSubmitting(false)
     }
   }
-
-  // Calculate amount per share preview (based on minted shares only)
-  const previewPerShare = totalPool && mintedShares > 0
-    ? (parseInt(totalPool) / mintedShares).toFixed(6)
-    : '0'
 
   // Build dividend round data from transactions (source of truth)
   // Group transactions by round_number from their data
@@ -560,27 +569,40 @@ export default function DividendsPage() {
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="total-pool">Total Distribution Amount</Label>
+              <Label htmlFor="per-share">Amount Per Share</Label>
               <div className="relative">
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  id="total-pool"
+                  id="per-share"
                   type="number"
-                  placeholder="Enter total amount to distribute..."
-                  value={totalPool}
-                  onChange={(e) => setTotalPool(e.target.value)}
+                  step="0.01"
+                  min="0"
+                  placeholder="Enter amount per share (e.g., 1.50)..."
+                  value={perShareAmount}
+                  onChange={(e) => {
+                    // Limit to 2 decimal places
+                    const value = e.target.value
+                    if (value === '' || /^\d*\.?\d{0,2}$/.test(value)) {
+                      setPerShareAmount(value)
+                    }
+                  }}
                   className="pl-9"
                 />
               </div>
-              {totalPool && mintedShares > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  ~${previewPerShare} per share ({mintedShares.toLocaleString()} minted shares)
-                </p>
-              )}
+              <p className="text-xs text-muted-foreground">
+                Amount each shareholder will receive per share (up to 2 decimal places)
+              </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="payment-token">Payment Token Address</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="payment-token">Payment Token Address</Label>
+                <UseWalletButton
+                  publicKey={publicKey?.toString() || null}
+                  currentValue={paymentToken}
+                  onUseWallet={useConnectedWallet}
+                />
+              </div>
               <Input
                 id="payment-token"
                 placeholder="Enter payment token mint address (e.g., USDC)..."
@@ -592,14 +614,15 @@ export default function DividendsPage() {
               </p>
             </div>
 
-            {totalPool && (
+            {perShareAmount && parseFloat(perShareAmount) > 0 && (
               <Alert>
                 <Send className="h-4 w-4" />
                 <AlertDescription>
                   <div className="space-y-1">
-                    <p className="font-medium">Distribution Preview</p>
-                    <p className="text-sm">Total Pool: ${parseInt(totalPool).toLocaleString()}</p>
-                    <p className="text-sm">Per Share: ${previewPerShare}</p>
+                    <p className="font-medium">Distribution Summary</p>
+                    <p className="text-sm">Per Share: ${parseFloat(perShareAmount).toFixed(2)}</p>
+                    <p className="text-sm">Total Shares: {mintedShares.toLocaleString()}</p>
+                    <p className="text-sm font-semibold">Total Amount: ${calculatedTotalPool.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                     <p className="text-sm">Recipients: {holderCount} shareholders</p>
                     <p className="text-sm text-muted-foreground mt-2">
                       Payments will be sent automatically upon creation.
@@ -616,7 +639,7 @@ export default function DividendsPage() {
             </Button>
             <Button
               onClick={handleCreateDistribution}
-              disabled={!totalPool || !paymentToken || submitting}
+              disabled={!perShareAmount || !paymentToken || calculatedTotalPool <= 0 || submitting}
             >
               {submitting ? (
                 <>
