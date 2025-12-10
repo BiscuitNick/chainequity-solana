@@ -83,6 +83,7 @@ export default function DashboardPage() {
   }
 
   const viewHistoricalSlot = (slot: number) => {
+    setCurrentPage(1) // Reset to first page when viewing historical state
     setSelectedSlot(slot)
   }
 
@@ -322,7 +323,7 @@ export default function DashboardPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setSelectedSlot(null)}
+              onClick={() => { setCurrentPage(1); setSelectedSlot(null); }}
               className="ml-4 text-amber-700 border-amber-500/50 hover:bg-amber-500/20"
             >
               Return to Live
