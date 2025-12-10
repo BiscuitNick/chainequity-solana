@@ -187,6 +187,11 @@ class ApiClient {
     return this.request<CapTableSnapshotV2Detail>(`/tokens/${tokenId}/captable/snapshots/v2/${slot}`)
   }
 
+  // On-the-fly state reconstruction (generates snapshot dynamically from transactions)
+  async getReconstructedStateAtSlot(tokenId: number, slot: number) {
+    return this.request<ReconstructedState>(`/tokens/${tokenId}/captable/state/${slot}`)
+  }
+
   async createCapTableSnapshotV2(tokenId: number, trigger = 'manual') {
     return this.request<CapTableSnapshotV2>(`/tokens/${tokenId}/captable/snapshots/v2`, {
       method: 'POST',
@@ -896,6 +901,33 @@ export interface UnifiedTransaction {
   notes: string | null
   tx_signature: string | null
   created_at: string
+}
+
+// Reconstructed State (on-the-fly snapshot from transactions)
+export interface ReconstructedState {
+  slot: number
+  token_id: number
+  approved_wallets: string[]
+  balances: Record<string, number>
+  positions: Array<{
+    wallet: string
+    share_class_id: number
+    shares: number
+    cost_basis: number
+    priority: number
+    preference_multiple: number
+  }>
+  vesting_schedules: Array<{
+    schedule_id: number
+    beneficiary: string
+    total_amount: number
+    released_amount: number
+    share_class_id: number | null
+    is_terminated: boolean
+  }>
+  total_supply: number
+  is_paused: boolean
+  holder_count: number
 }
 
 // Investment Modeling Types

@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Fragment } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useAppStore } from '@/stores/useAppStore'
-import api, { CapTableResponse, Proposal, TransferStatsResponse, IssuanceStatsResponse, CapTableSnapshotV2Detail, UnifiedTransaction } from '@/lib/api'
+import api, { CapTableResponse, Proposal, TransferStatsResponse, IssuanceStatsResponse, UnifiedTransaction, ReconstructedState } from '@/lib/api'
 import { WalletAddress } from '@/components/WalletAddress'
-import { AlertTriangle, Copy, History, Check, ChevronLeft, ChevronRight } from 'lucide-react'
+import { AlertTriangle, Copy, History, Check, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 // Combined activity type for displaying all unified transactions
@@ -16,12 +16,17 @@ type Activity = {
   type: string  // tx_type from unified transactions
   from: string
   to: string
-  amount: number
+  amount: number | null
   timestamp: string
   status: string
   slot?: number
   shareClass?: string  // For share grants
   txSignature?: string
+  notes?: string
+  data?: Record<string, any> | null
+  // Stock split specific
+  splitNumerator?: number
+  splitDenominator?: number
 }
 
 type ActivityFilter = 'all' | 'transfer' | 'mint' | 'share_grant' | 'approval' | 'other'
@@ -33,13 +38,14 @@ export default function DashboardPage() {
   const selectedSlot = useAppStore((state) => state.selectedSlot)
   const setSelectedSlot = useAppStore((state) => state.setSelectedSlot)
   const [capTable, setCapTable] = useState<CapTableResponse | null>(null)
-  const [historicalSnapshot, setHistoricalSnapshot] = useState<CapTableSnapshotV2Detail | null>(null)
+  const [reconstructedState, setReconstructedState] = useState<ReconstructedState | null>(null)
   const [proposals, setProposals] = useState<Proposal[]>([])
   const [transferStats, setTransferStats] = useState<TransferStatsResponse | null>(null)
   const [issuanceStats, setIssuanceStats] = useState<IssuanceStatsResponse | null>(null)
   const [allActivity, setAllActivity] = useState<Activity[]>([])
   const [loading, setLoading] = useState(false)
   const [copiedSlot, setCopiedSlot] = useState<number | null>(null)
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
 
   // Filter and pagination state
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>('all')
@@ -76,25 +82,50 @@ export default function DashboardPage() {
     setSelectedSlot(slot)
   }
 
+  const toggleRowExpanded = (id: string) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
   // Helper function to convert unified transaction to Activity
   const convertTransactionToActivity = (tx: UnifiedTransaction): Activity => {
     // Determine 'from' based on transaction type
     let from = tx.wallet || ''
+    let to = tx.wallet_to || tx.wallet || ''
+
     if (tx.tx_type === 'mint' || tx.tx_type === 'share_grant') {
       from = tx.tx_type === 'mint' ? 'MINT' : 'GRANT'
+      to = tx.wallet || ''
+    } else if (tx.tx_type === 'stock_split') {
+      // For stock split, from/to represent the ratio
+      from = String(tx.data?.denominator || 1)
+      to = String(tx.data?.numerator || 1)
+    } else if (tx.tx_type === 'approval' || tx.tx_type === 'revocation') {
+      to = tx.wallet || ''
     }
 
     return {
       id: `tx-${tx.id}`,
       type: tx.tx_type,
       from,
-      to: tx.wallet_to || tx.wallet || '',
-      amount: tx.amount || 0,
+      to,
+      amount: tx.amount,
       timestamp: tx.created_at,
       status: 'completed',
       slot: tx.slot,
       shareClass: tx.data?.share_class_symbol || tx.data?.share_class_name,
       txSignature: tx.tx_signature || undefined,
+      notes: tx.notes || undefined,
+      data: tx.data,
+      splitNumerator: tx.data?.numerator,
+      splitDenominator: tx.data?.denominator,
     }
   }
 
@@ -103,34 +134,43 @@ export default function DashboardPage() {
 
     const fetchData = async () => {
       setLoading(true)
-      setHistoricalSnapshot(null)
+      setReconstructedState(null)
       try {
         if (isViewingHistorical && selectedSlot !== null) {
-          // Use V2 snapshot API for historical data + fetch unified transactions up to that slot
-          const [snapshot, transactions] = await Promise.all([
-            api.getCapTableSnapshotV2AtSlot(selectedToken.tokenId, selectedSlot),
+          // Use on-the-fly state reconstruction + fetch unified transactions up to that slot
+          const [state, transactions] = await Promise.all([
+            api.getReconstructedStateAtSlot(selectedToken.tokenId, selectedSlot).catch((err) => {
+              console.error('Failed to reconstruct state:', err)
+              return null
+            }),
             api.getUnifiedTransactions(selectedToken.tokenId, 100, selectedSlot).catch(() => []),
           ])
-          setHistoricalSnapshot(snapshot)
 
-          // Convert snapshot to CapTableResponse format for display
-          const snapshotHolders = snapshot.holders || []
+          if (state) {
+            setReconstructedState(state)
+            // Convert reconstructed state to CapTableResponse format for display
+            const holders = Object.entries(state.balances)
+              .filter(([_, balance]) => balance > 0)
+              .map(([wallet, balance]) => ({
+                wallet,
+                balance,
+                ownership_pct: state.total_supply > 0 ? (balance / state.total_supply) * 100 : 0,
+                vested: 0,
+                unvested: 0,
+                status: state.approved_wallets.includes(wallet) ? 'active' : 'pending',
+              }))
+              .sort((a, b) => b.balance - a.balance)
 
-          const capTableFromSnapshot: CapTableResponse = {
-            slot: snapshot.slot,
-            timestamp: snapshot.timestamp || new Date().toISOString(),
-            total_supply: snapshot.total_supply,
-            holder_count: snapshotHolders.length,
-            holders: snapshotHolders.map((h: any) => ({
-              wallet: h.wallet,
-              balance: h.balance,
-              ownership_pct: snapshot.total_supply > 0 ? (h.balance / snapshot.total_supply) * 100 : 0,
-              vested: 0,
-              unvested: 0,
-              status: h.status || 'active',
-            })),
+            const capTableFromState: CapTableResponse = {
+              slot: state.slot,
+              timestamp: new Date().toISOString(),
+              total_supply: state.total_supply,
+              holder_count: state.holder_count,
+              holders,
+            }
+            setCapTable(capTableFromState)
           }
-          setCapTable(capTableFromSnapshot)
+
           // Clear live stats when viewing historical
           setProposals([])
           setTransferStats(null)
@@ -184,6 +224,33 @@ export default function DashboardPage() {
   const transferCount = allActivity.filter(a => a.type === 'transfer').length
   const shareGrantCount = allActivity.filter(a => a.type === 'share_grant').length
 
+  // Helper to check if a field is relevant for a transaction type
+  const isFieldRelevant = (activity: Activity, field: 'from' | 'to' | 'amount') => {
+    const type = activity.type
+    switch (field) {
+      case 'from':
+        return ['transfer', 'mint', 'share_grant', 'stock_split'].includes(type)
+      case 'to':
+        return ['transfer', 'mint', 'share_grant', 'approval', 'revocation', 'stock_split'].includes(type)
+      case 'amount':
+        return ['transfer', 'mint', 'share_grant', 'burn'].includes(type)
+      default:
+        return true
+    }
+  }
+
+  // Format local time
+  const formatLocalTime = (timestamp: string) => {
+    return new Date(timestamp).toLocaleString(undefined, {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+  }
+
   return (
     <div className="space-y-6">
       {isViewingHistorical && (
@@ -191,9 +258,9 @@ export default function DashboardPage() {
           <AlertTriangle className="h-4 w-4 text-amber-500" />
           <AlertDescription className="flex items-center justify-between">
             <span className="text-amber-700 dark:text-amber-400">
-              Viewing historical data from snapshot at slot #{historicalSnapshot?.slot?.toLocaleString() || selectedSlot?.toLocaleString()}
-              {historicalSnapshot && historicalSnapshot.slot !== selectedSlot && (
-                <span className="text-xs ml-2">(nearest to requested slot #{selectedSlot?.toLocaleString()})</span>
+              Viewing historical data at slot #{selectedSlot?.toLocaleString()}
+              {reconstructedState && reconstructedState.slot !== selectedSlot && (
+                <span className="text-xs ml-2">(reconstructed from transactions)</span>
               )}
             </span>
             <Button
@@ -226,7 +293,7 @@ export default function DashboardPage() {
             <div className="text-2xl font-bold">
               {capTable?.total_supply?.toLocaleString() ?? selectedToken?.totalSupply?.toLocaleString() ?? '—'}
             </div>
-            <p className="text-xs text-muted-foreground">tokens</p>
+            <p className="text-xs text-muted-foreground">shares</p>
           </CardContent>
         </Card>
 
@@ -298,7 +365,7 @@ export default function DashboardPage() {
                     <div className="text-right">
                       <div className="text-sm font-medium">{holder.ownership_pct.toFixed(2)}%</div>
                       <div className="text-xs text-muted-foreground">
-                        {holder.balance.toLocaleString()} tokens
+                        {holder.balance.toLocaleString()} shares
                       </div>
                     </div>
                   </div>
@@ -352,7 +419,7 @@ export default function DashboardPage() {
                       <th className="text-left py-2 px-2 font-medium">Type</th>
                       <th className="text-left py-2 px-2 font-medium">From</th>
                       <th className="text-left py-2 px-2 font-medium">To</th>
-                      <th className="text-right py-2 px-2 font-medium">Amount</th>
+                      <th className="text-right py-2 px-2 font-medium">Shares</th>
                       <th className="text-left py-2 px-2 font-medium">Date & Time</th>
                       <th className="text-left py-2 px-2 font-medium">Slot</th>
                       <th className="text-center py-2 px-2 font-medium">Status</th>
@@ -361,99 +428,184 @@ export default function DashboardPage() {
                   </thead>
                   <tbody>
                     {paginatedActivity.map((activity) => (
-                      <tr key={activity.id} className="border-b last:border-0 hover:bg-muted/50">
-                        <td className="py-2 px-2">
-                          <span className={`text-xs px-1.5 py-0.5 rounded whitespace-nowrap ${
-                            activity.type === 'mint'
-                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                              : activity.type === 'share_grant'
-                              ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                              : activity.type === 'transfer'
-                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                              : activity.type === 'approval'
-                              ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-                              : 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400'
-                          }`}>
-                            {activity.type === 'mint' ? 'MINT'
-                              : activity.type === 'share_grant' ? 'SHARES'
-                              : activity.type === 'transfer' ? 'TRANSFER'
-                              : activity.type === 'approval' ? 'APPROVAL'
-                              : activity.type.toUpperCase()}
-                          </span>
-                          {activity.shareClass && (
-                            <span className="text-xs text-muted-foreground ml-1">({activity.shareClass})</span>
-                          )}
-                        </td>
-                        <td className="py-2 px-2">
-                          {activity.from === 'MINT' || activity.from === 'GRANT' ? (
-                            <span className="font-mono text-xs">{activity.from}</span>
-                          ) : (
-                            <WalletAddress address={activity.from} />
-                          )}
-                        </td>
-                        <td className="py-2 px-2">
-                          <WalletAddress address={activity.to} />
-                        </td>
-                        <td className="py-2 px-2 text-right font-medium whitespace-nowrap">
-                          {activity.amount.toLocaleString()}
-                          {activity.type === 'share_grant' && <span className="text-xs ml-1 text-muted-foreground">shares</span>}
-                        </td>
-                        <td className="py-2 px-2 text-xs text-muted-foreground whitespace-nowrap">
-                          {new Date(activity.timestamp).toLocaleString()}
-                        </td>
-                        <td className="py-2 px-2">
-                          {activity.slot !== undefined && activity.slot !== null ? (
+                      <Fragment key={activity.id}>
+                        <tr
+                          className="border-b last:border-0 hover:bg-muted/50 cursor-pointer"
+                          onClick={() => toggleRowExpanded(activity.id)}
+                        >
+                          <td className="py-2 px-2">
                             <div className="flex items-center gap-1">
-                              <span className="text-xs font-mono">#{activity.slot.toLocaleString()}</span>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <button
-                                    onClick={() => copySlotToClipboard(activity.slot!)}
-                                    className="p-0.5 hover:bg-muted rounded"
-                                  >
-                                    {copiedSlot === activity.slot ? (
-                                      <Check className="h-3 w-3 text-green-500" />
-                                    ) : (
-                                      <Copy className="h-3 w-3 text-muted-foreground" />
-                                    )}
-                                  </button>
-                                </TooltipTrigger>
-                                <TooltipContent>Copy slot</TooltipContent>
-                              </Tooltip>
+                              {expandedRows.has(activity.id) ? (
+                                <ChevronUp className="h-3 w-3 text-muted-foreground" />
+                              ) : (
+                                <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                              )}
+                              <span className={`text-xs px-1.5 py-0.5 rounded whitespace-nowrap ${
+                                activity.type === 'mint'
+                                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                  : activity.type === 'share_grant'
+                                  ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                                  : activity.type === 'transfer'
+                                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                  : activity.type === 'approval'
+                                  ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+                                  : activity.type === 'stock_split'
+                                  ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                                  : 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400'
+                              }`}>
+                                {activity.type === 'mint' ? 'MINT'
+                                  : activity.type === 'share_grant' ? 'SHARES'
+                                  : activity.type === 'transfer' ? 'TRANSFER'
+                                  : activity.type === 'approval' ? 'APPROVAL'
+                                  : activity.type === 'stock_split' ? 'SPLIT'
+                                  : activity.type.toUpperCase().replace('_', ' ')}
+                              </span>
                             </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
-                        </td>
-                        <td className="py-2 px-2 text-center">
-                          <span className={`text-xs ${
-                            activity.status === 'success' || activity.status === 'completed'
-                              ? 'text-green-600'
-                              : activity.status === 'pending'
-                              ? 'text-yellow-600'
-                              : 'text-red-600'
-                          }`}>
-                            {activity.status}
-                          </span>
-                        </td>
-                        <td className="py-2 px-2">
-                          {activity.slot !== undefined && activity.slot !== null && (
-                            <div className="flex items-center justify-center">
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <button
-                                    onClick={() => viewHistoricalSlot(activity.slot!)}
-                                    className="p-1 hover:bg-muted rounded"
-                                  >
-                                    <History className="h-3.5 w-3.5 text-muted-foreground hover:text-primary" />
-                                  </button>
-                                </TooltipTrigger>
-                                <TooltipContent>View state at this slot</TooltipContent>
-                              </Tooltip>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
+                            {activity.shareClass && (
+                              <span className="text-xs text-muted-foreground ml-1">({activity.shareClass})</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-2">
+                            {!isFieldRelevant(activity, 'from') ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : activity.type === 'stock_split' ? (
+                              <span className="font-mono text-xs font-medium">{activity.splitDenominator || activity.from}</span>
+                            ) : activity.from === 'MINT' || activity.from === 'GRANT' ? (
+                              <span className="font-mono text-xs">{activity.from}</span>
+                            ) : activity.from ? (
+                              <WalletAddress address={activity.from} />
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-2">
+                            {!isFieldRelevant(activity, 'to') ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : activity.type === 'stock_split' ? (
+                              <span className="font-mono text-xs font-medium">{activity.splitNumerator || activity.to}</span>
+                            ) : activity.to ? (
+                              <WalletAddress address={activity.to} />
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-2 text-right font-medium whitespace-nowrap">
+                            {!isFieldRelevant(activity, 'amount') ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : activity.amount !== null && activity.amount !== undefined ? (
+                              activity.amount.toLocaleString()
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-2 text-xs text-muted-foreground whitespace-nowrap">
+                            {formatLocalTime(activity.timestamp)}
+                          </td>
+                          <td className="py-2 px-2">
+                            {activity.slot !== undefined && activity.slot !== null ? (
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs font-mono">#{activity.slot.toLocaleString()}</span>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        copySlotToClipboard(activity.slot!)
+                                      }}
+                                      className="p-0.5 hover:bg-muted rounded"
+                                    >
+                                      {copiedSlot === activity.slot ? (
+                                        <Check className="h-3 w-3 text-green-500" />
+                                      ) : (
+                                        <Copy className="h-3 w-3 text-muted-foreground" />
+                                      )}
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Copy slot</TooltipContent>
+                                </Tooltip>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-2 text-center">
+                            <span className={`text-xs ${
+                              activity.status === 'success' || activity.status === 'completed'
+                                ? 'text-green-600'
+                                : activity.status === 'pending'
+                                ? 'text-yellow-600'
+                                : 'text-red-600'
+                            }`}>
+                              {activity.status}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2">
+                            {activity.slot !== undefined && activity.slot !== null && (
+                              <div className="flex items-center justify-center">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        viewHistoricalSlot(activity.slot!)
+                                      }}
+                                      className="p-1 hover:bg-muted rounded"
+                                    >
+                                      <History className="h-3.5 w-3.5 text-muted-foreground hover:text-primary" />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>View state at this slot</TooltipContent>
+                                </Tooltip>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                        {/* Expanded row details */}
+                        {expandedRows.has(activity.id) && (
+                          <tr className="bg-muted/30">
+                            <td colSpan={8} className="py-3 px-4">
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                                <div>
+                                  <span className="text-muted-foreground">Transaction Type:</span>
+                                  <p className="font-medium">{activity.type.replace('_', ' ')}</p>
+                                </div>
+                                {activity.txSignature && (
+                                  <div>
+                                    <span className="text-muted-foreground">TX Signature:</span>
+                                    <p className="font-mono truncate">{activity.txSignature}</p>
+                                  </div>
+                                )}
+                                {activity.notes && (
+                                  <div className="col-span-2">
+                                    <span className="text-muted-foreground">Notes:</span>
+                                    <p className="font-medium">{activity.notes}</p>
+                                  </div>
+                                )}
+                                {activity.type === 'stock_split' && (
+                                  <div>
+                                    <span className="text-muted-foreground">Split Ratio:</span>
+                                    <p className="font-medium">{activity.splitDenominator}:{activity.splitNumerator}</p>
+                                  </div>
+                                )}
+                                {activity.shareClass && (
+                                  <div>
+                                    <span className="text-muted-foreground">Share Class:</span>
+                                    <p className="font-medium">{activity.shareClass}</p>
+                                  </div>
+                                )}
+                                {activity.data && Object.keys(activity.data).length > 0 && (
+                                  <div className="col-span-2">
+                                    <span className="text-muted-foreground">Additional Data:</span>
+                                    <pre className="text-xs bg-muted p-2 rounded mt-1 overflow-auto">
+                                      {JSON.stringify(activity.data, null, 2)}
+                                    </pre>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
