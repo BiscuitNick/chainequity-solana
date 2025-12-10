@@ -22,7 +22,7 @@ export function CreateTokenModal({ isOpen, onClose, onSuccess }: CreateTokenModa
   // Basic token info
   const [symbol, setSymbol] = useState('')
   const [name, setName] = useState('')
-  const [totalSupply, setTotalSupply] = useState('1000000')
+  // Tokens always start with 0 supply - shares are added via issuance
   const [decimals, setDecimals] = useState('6')
 
   // Multi-sig configuration
@@ -80,9 +80,6 @@ export function CreateTokenModal({ isOpen, onClose, onSuccess }: CreateTokenModa
     if (!name.trim()) return 'Name is required'
     if (name.length > 50) return 'Name must be 50 characters or less'
 
-    const supply = parseInt(totalSupply)
-    if (isNaN(supply) || supply <= 0) return 'Total supply must be a positive number'
-
     const dec = parseInt(decimals)
     if (isNaN(dec) || dec < 0 || dec > 18) return 'Decimals must be between 0 and 18'
 
@@ -126,7 +123,7 @@ export function CreateTokenModal({ isOpen, onClose, onSuccess }: CreateTokenModa
         symbol: symbol.toUpperCase().trim(),
         name: name.trim(),
         decimals: parseInt(decimals),
-        initial_supply: parseInt(totalSupply),
+        initial_supply: 0,  // Tokens always start with 0 supply
         features: {
           vesting_enabled: vestingEnabled,
           governance_enabled: governanceEnabled,
@@ -255,38 +252,21 @@ export function CreateTokenModal({ isOpen, onClose, onSuccess }: CreateTokenModa
                   </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="totalSupply">Total Supply *</Label>
-                    <Input
-                      id="totalSupply"
-                      type="number"
-                      value={totalSupply}
-                      onChange={(e) => setTotalSupply(e.target.value)}
-                      placeholder="1000000"
-                      min="1"
-                      disabled={isSubmitting}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Total number of tokens to create
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="decimals">Decimals</Label>
-                    <Input
-                      id="decimals"
-                      type="number"
-                      value={decimals}
-                      onChange={(e) => setDecimals(e.target.value)}
-                      placeholder="6"
-                      min="0"
-                      max="18"
-                      disabled={isSubmitting}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Decimal places (0 for whole shares)
-                    </p>
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="decimals">Decimals</Label>
+                  <Input
+                    id="decimals"
+                    type="number"
+                    value={decimals}
+                    onChange={(e) => setDecimals(e.target.value)}
+                    placeholder="6"
+                    min="0"
+                    max="18"
+                    disabled={isSubmitting}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Decimal places (0 for whole shares). Supply starts at 0 and grows as shares are issued.
+                  </p>
                 </div>
               </div>
             )}

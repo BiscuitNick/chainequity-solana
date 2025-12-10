@@ -113,6 +113,15 @@ class VestingScheduler:
 
         current_time = datetime.utcnow()
 
+        # Get the token for updating total_supply
+        token_result = await db.execute(
+            select(Token).where(Token.token_id == token_id)
+        )
+        token = token_result.scalar_one_or_none()
+        if not token:
+            logger.warning("Token not found for vesting release", token_id=token_id)
+            return
+
         # Get all active (non-terminated) vesting schedules for this token
         result = await db.execute(
             select(VestingSchedule)
@@ -128,6 +137,7 @@ class VestingScheduler:
 
         tx_service = TransactionService(db)
         releases_recorded = 0
+        total_newly_vested = 0
 
         for schedule in schedules:
             # Calculate currently vested amount
@@ -162,6 +172,7 @@ class VestingScheduler:
                 schedule.released_amount = vested_now
 
                 releases_recorded += 1
+                total_newly_vested += newly_vested
 
                 logger.debug(
                     "Recorded vesting release",
@@ -172,11 +183,16 @@ class VestingScheduler:
                     slot=current_slot,
                 )
 
+        # Update token total_supply with all newly vested shares
+        if total_newly_vested > 0:
+            token.total_supply = (token.total_supply or 0) + total_newly_vested
+
         if releases_recorded > 0:
             logger.info(
                 "Processed vesting releases",
                 token_id=token_id,
                 releases_recorded=releases_recorded,
+                total_newly_vested=total_newly_vested,
                 slot=current_slot,
             )
 
