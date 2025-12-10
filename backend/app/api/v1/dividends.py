@@ -10,7 +10,6 @@ import asyncio
 from app.models.database import get_db
 from app.models.dividend import DividendRound, DividendPayment
 from app.models.token import Token
-from app.models.snapshot import CurrentBalance
 from app.schemas.dividend import (
     DividendRoundResponse,
     CreateDividendRequest,
@@ -20,6 +19,7 @@ from app.schemas.dividend import (
 from solders.pubkey import Pubkey
 from app.services.history import HistoryService
 from app.services.solana_client import get_solana_client
+from app.services.transaction_service import TransactionService
 import structlog
 
 router = APIRouter()
@@ -188,20 +188,29 @@ async def create_dividend_round(
     max_num = result.scalar() or 0
     next_num = max_num + 1
 
-    # Get all shareholders and their balances (snapshot)
-    result = await db.execute(
-        select(CurrentBalance).where(
-            CurrentBalance.token_id == token_id,
-            CurrentBalance.balance > 0
-        )
-    )
-    shareholders = result.scalars().all()
+    # Get current slot for state reconstruction
+    try:
+        solana_client = await get_solana_client()
+        current_slot = await solana_client.get_slot()
+    except Exception:
+        current_slot = 0
+
+    # Reconstruct shareholder balances from transactions (source of truth)
+    tx_service = TransactionService(db)
+    state = await tx_service.reconstruct_at_slot(token_id, current_slot if current_slot > 0 else 999999999)
+
+    # Filter to wallets with positive balances
+    shareholders = [
+        {"wallet": wallet, "balance": balance}
+        for wallet, balance in state.balances.items()
+        if balance > 0
+    ]
 
     if not shareholders:
         raise HTTPException(status_code=400, detail="No shareholders found - cannot create dividend distribution")
 
-    # Calculate total minted supply
-    minted_supply = sum(s.balance for s in shareholders)
+    # Calculate total minted supply from reconstructed state
+    minted_supply = state.total_supply
 
     if minted_supply <= 0:
         raise HTTPException(status_code=400, detail="No minted shares found - cannot create dividend distribution")
@@ -220,7 +229,7 @@ async def create_dividend_round(
         payment_token=request.payment_token,
         total_pool=request.total_pool,
         amount_per_share=amount_per_share,
-        snapshot_slot=0,  # Could be set to current slot for on-chain reference
+        snapshot_slot=current_slot,  # Slot used for state reconstruction
         status="distributing",
         total_recipients=total_recipients,
         total_batches=total_batches,
@@ -231,14 +240,14 @@ async def create_dividend_round(
 
     # Create payment records for each shareholder
     for i, shareholder in enumerate(shareholders):
-        payment_amount = int(shareholder.balance * amount_per_share)
+        payment_amount = int(shareholder["balance"] * amount_per_share)
         batch_num = i // BATCH_SIZE
 
         payment = DividendPayment(
             token_id=token_id,
             round_id=new_round.id,
-            wallet=shareholder.wallet,
-            shares=shareholder.balance,
+            wallet=shareholder["wallet"],
+            shares=shareholder["balance"],
             amount=payment_amount,
             status="pending",
             batch_number=batch_num,
@@ -489,41 +498,3 @@ async def get_round_payments(
     ]
 
 
-# Legacy endpoint for backwards compatibility with frontend
-@router.get("/{round_id}/claims")
-async def get_round_claims(
-    token_id: int = Path(...),
-    round_id: int = Path(...),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get all payments for a dividend round (legacy endpoint)"""
-    result = await db.execute(
-        select(DividendRound).where(
-            DividendRound.token_id == token_id,
-            DividendRound.id == round_id
-        )
-    )
-    round_obj = result.scalar_one_or_none()
-    if not round_obj:
-        raise HTTPException(status_code=404, detail="Dividend round not found")
-
-    result = await db.execute(
-        select(DividendPayment).where(DividendPayment.round_id == round_id)
-        .order_by(DividendPayment.distributed_at.desc())
-    )
-    payments = result.scalars().all()
-
-    # Return in legacy format for frontend compatibility
-    return [
-        {
-            "id": p.id,
-            "wallet": p.wallet,
-            "shares": p.shares,
-            "dividend_per_share": round_obj.amount_per_share,
-            "amount": p.amount,
-            "claimed_at": p.distributed_at or p.created_at,
-            "signature": p.signature,
-            "status": p.status,
-        }
-        for p in payments
-    ]

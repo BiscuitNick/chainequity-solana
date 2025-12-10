@@ -8,9 +8,10 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useAppStore } from '@/stores/useAppStore'
-import { Plus, DollarSign, RefreshCw, AlertCircle, Coins, CheckCircle, Clock, XCircle, Send } from 'lucide-react'
-import { api, DividendRound, DividendPayment } from '@/lib/api'
+import { Plus, DollarSign, RefreshCw, AlertCircle, CheckCircle, Clock, XCircle, Send, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
+import { api, DividendRound, DividendPayment, UnifiedTransaction } from '@/lib/api'
 import { WalletAddress } from '@/components/WalletAddress'
+import { Button as ToastButton } from '@/components/ui/button'
 
 // Helper to format dates nicely
 const formatDate = (dateStr: string | null | undefined) => {
@@ -31,6 +32,8 @@ const formatDate = (dateStr: string | null | undefined) => {
 
 export default function DividendsPage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
+  const selectedSlot = useAppStore((state) => state.selectedSlot)
+  const setSelectedSlot = useAppStore((state) => state.setSelectedSlot)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [dividendRounds, setDividendRounds] = useState<DividendRound[]>([])
   const [loading, setLoading] = useState(false)
@@ -41,6 +44,12 @@ export default function DividendsPage() {
   // Track payments per round using a map (roundId -> payments[])
   const [paymentsByRound, setPaymentsByRound] = useState<Record<number, DividendPayment[]>>({})
   const [retryingRoundId, setRetryingRoundId] = useState<number | null>(null)
+  // Transaction-based dividend data (source of truth)
+  const [dividendTransactions, setDividendTransactions] = useState<UnifiedTransaction[]>([])
+  // Track which rounds have expanded details
+  const [expandedRounds, setExpandedRounds] = useState<Set<number>>(new Set())
+
+  const isViewingHistorical = selectedSlot !== null
 
   // Create distribution form state
   const [totalPool, setTotalPool] = useState('')
@@ -93,7 +102,7 @@ export default function DividendsPage() {
   const fetchPaymentsForRound = async (roundId: number) => {
     if (!selectedToken) return
     try {
-      const data = await api.getDividendClaims(selectedToken.tokenId, roundId)
+      const data = await api.getDividendPayments(selectedToken.tokenId, roundId)
       setPaymentsByRound(prev => ({ ...prev, [roundId]: data }))
     } catch (e: any) {
       console.error('Failed to fetch payments for round', roundId, ':', e)
@@ -110,10 +119,29 @@ export default function DividendsPage() {
     }
   }
 
+  // Fetch dividend transactions (source of truth)
+  const fetchDividendTransactions = async () => {
+    if (!selectedToken) return
+    try {
+      const data = await api.getUnifiedTransactions(
+        selectedToken.tokenId,
+        1000,  // high limit to get all dividend transactions
+        selectedSlot ?? undefined,  // filter by max slot if viewing historical
+        'dividend_payment'
+      )
+      setDividendTransactions(data)
+    } catch (e: any) {
+      console.error('Failed to fetch dividend transactions:', e)
+      setDividendTransactions([])
+    }
+  }
+
+
   useEffect(() => {
     fetchDividendRounds()
     fetchMintedShares()
-  }, [selectedToken])
+    fetchDividendTransactions()
+  }, [selectedToken, selectedSlot])
 
   // Fetch payments when rounds change
   useEffect(() => {
@@ -182,6 +210,50 @@ export default function DividendsPage() {
     ? (parseInt(totalPool) / mintedShares).toFixed(6)
     : '0'
 
+  // Build dividend round data from transactions (source of truth)
+  // Group transactions by round_number from their data
+  const transactionBasedRounds = (() => {
+    if (dividendTransactions.length === 0) return []
+
+    const roundsMap: Record<number, {
+      round_number: number
+      payments: typeof dividendTransactions
+      total_pool: number
+      amount_per_share: number
+      total_recipients: number
+      total_distributed: number
+      created_at: string
+    }> = {}
+
+    for (const tx of dividendTransactions) {
+      const txData = tx.data as any
+      const roundNumber = txData?.round_number || 1
+
+      if (!roundsMap[roundNumber]) {
+        roundsMap[roundNumber] = {
+          round_number: roundNumber,
+          payments: [],
+          total_pool: 0,
+          amount_per_share: txData?.dividend_per_share || 0,
+          total_recipients: 0,
+          total_distributed: 0,
+          created_at: tx.created_at,
+        }
+      }
+
+      roundsMap[roundNumber].payments.push(tx)
+      roundsMap[roundNumber].total_distributed += tx.amount || 0
+      roundsMap[roundNumber].total_recipients += 1
+    }
+
+    // Calculate total pool from distributed amount
+    for (const round of Object.values(roundsMap)) {
+      round.total_pool = round.total_distributed
+    }
+
+    return Object.values(roundsMap).sort((a, b) => b.round_number - a.round_number)
+  })()
+
   const statusColors: Record<string, string> = {
     pending: 'bg-yellow-500/10 text-yellow-500',
     distributing: 'bg-blue-500/10 text-blue-500',
@@ -196,8 +268,12 @@ export default function DividendsPage() {
     failed: <XCircle className="h-4 w-4" />,
   }
 
-  const totalDistributed = dividendRounds.reduce((sum, r) => sum + (r.total_distributed || 0), 0)
-  const completedRounds = dividendRounds.filter(r => r.status === 'completed')
+  // Use transaction-based data as source of truth for display
+  const totalDistributed = transactionBasedRounds.reduce((sum, r) => sum + r.total_distributed, 0)
+  const roundCount = transactionBasedRounds.length
+  const latestPerShare = transactionBasedRounds[0]?.amount_per_share || 0
+
+  // Keep API-based for distributing status (in-progress rounds)
   const distributingRounds = dividendRounds.filter(r => r.status === 'distributing')
 
   if (!selectedToken) {
@@ -216,22 +292,44 @@ export default function DividendsPage() {
 
   return (
     <div className="space-y-6">
+      {isViewingHistorical && (
+        <Alert className="border-amber-500/50 bg-amber-500/10">
+          <AlertTriangle className="h-4 w-4 text-amber-500" />
+          <AlertDescription className="flex items-center justify-between">
+            <span className="text-amber-700 dark:text-amber-400">
+              Viewing historical dividend data up to slot #{selectedSlot?.toLocaleString()}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedSlot(null)}
+              className="ml-4 text-amber-700 border-amber-500/50 hover:bg-amber-500/20"
+            >
+              Return to Live
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Dividends</h1>
           <p className="text-muted-foreground">
             Auto-distribute dividends to {selectedToken.symbol} holders
+            {isViewingHistorical && ' (Historical)'}
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={fetchDividendRounds} disabled={loading}>
+          <Button variant="outline" onClick={() => { fetchDividendRounds(); fetchMintedShares(); fetchDividendTransactions(); }} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button onClick={() => setShowCreateModal(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Create Distribution
-          </Button>
+          {!isViewingHistorical && (
+            <Button onClick={() => setShowCreateModal(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Distribution
+            </Button>
+          )}
         </div>
       </div>
 
@@ -277,8 +375,8 @@ export default function DividendsPage() {
             <CardTitle className="text-sm font-medium">Distribution Rounds</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{loading ? '...' : dividendRounds.length}</div>
-            <p className="text-xs text-muted-foreground">{completedRounds.length} completed</p>
+            <div className="text-2xl font-bold">{loading ? '...' : roundCount}</div>
+            <p className="text-xs text-muted-foreground">{roundCount} completed</p>
           </CardContent>
         </Card>
         <Card>
@@ -296,37 +394,32 @@ export default function DividendsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              ${loading ? '...' : dividendRounds[0]?.amount_per_share?.toFixed(4) ?? '—'}
+              ${loading ? '...' : latestPerShare > 0 ? latestPerShare.toFixed(4) : '—'}
             </div>
             <p className="text-xs text-muted-foreground">
-              {dividendRounds[0] ? (
-                <WalletAddress address={dividendRounds[0].payment_token} />
-              ) : '—'}
+              {roundCount > 0 ? 'last distribution' : '—'}
             </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Render recent distribution rounds */}
-      {dividendRounds.slice(0, 5).map((round) => {
-        const roundPayments = paymentsByRound[round.id] || []
-        const isRetrying = retryingRoundId === round.id
-        const progressPercent = round.total_batches > 0
-          ? (round.completed_batches / round.total_batches) * 100
-          : (round.status === 'completed' ? 100 : 0)
-
-        // Count payment statuses
-        const sentCount = roundPayments.filter(p => p.status === 'sent').length
-        const failedCount = roundPayments.filter(p => p.status === 'failed').length
-        const pendingCount = roundPayments.filter(p => p.status === 'pending').length
-
-        const borderColor = round.status === 'completed' ? 'border-green-500'
-          : round.status === 'distributing' ? 'border-blue-500'
-          : round.status === 'failed' ? 'border-red-500'
-          : 'border-muted'
+      {/* Render distribution rounds from transactions (source of truth) */}
+      {transactionBasedRounds.map((round) => {
+        const isExpanded = expandedRounds.has(round.round_number)
+        const toggleExpanded = () => {
+          setExpandedRounds(prev => {
+            const next = new Set(prev)
+            if (next.has(round.round_number)) {
+              next.delete(round.round_number)
+            } else {
+              next.add(round.round_number)
+            }
+            return next
+          })
+        }
 
         return (
-          <Card key={round.id} className={borderColor}>
+          <Card key={round.round_number} className="border-green-500">
             <CardHeader>
               <div className="flex justify-between items-center">
                 <div>
@@ -335,17 +428,12 @@ export default function DividendsPage() {
                     Distribution Round #{round.round_number}
                   </CardTitle>
                   <CardDescription>
-                    {round.status === 'completed'
-                      ? `Completed ${formatDate(round.distributed_at)}`
-                      : round.status === 'distributing'
-                      ? 'Auto-distributing to all shareholders...'
-                      : `Created ${formatDate(round.created_at)}`
-                    }
+                    Completed {formatDate(round.created_at)}
                   </CardDescription>
                 </div>
-                <span className={`px-3 py-1 rounded text-sm flex-shrink-0 flex items-center gap-2 ${statusColors[round.status]}`}>
-                  {statusIcons[round.status]}
-                  <span className="capitalize">{round.status}</span>
+                <span className="px-3 py-1 rounded text-sm flex-shrink-0 flex items-center gap-2 bg-green-500/10 text-green-500">
+                  <CheckCircle className="h-4 w-4" />
+                  <span className="capitalize">completed</span>
                 </span>
               </div>
             </CardHeader>
@@ -365,7 +453,7 @@ export default function DividendsPage() {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Distributed</p>
-                  <p className="text-xl font-bold">${(round.total_distributed || 0).toLocaleString()}</p>
+                  <p className="text-xl font-bold">${round.total_distributed.toLocaleString()}</p>
                 </div>
               </div>
 
@@ -373,97 +461,65 @@ export default function DividendsPage() {
               <div className="mt-4">
                 <div className="flex justify-between text-sm mb-1">
                   <span>Progress</span>
-                  <span>
-                    {round.status === 'distributing'
-                      ? `Batch ${round.completed_batches}/${round.total_batches}`
-                      : `${round.distribution_count || sentCount} of ${round.total_recipients} sent`
-                    }
-                  </span>
+                  <span>{round.total_recipients} of {round.total_recipients} sent</span>
                 </div>
                 <div className="w-full bg-muted rounded-full h-2">
-                  <div
-                    className={`h-2 rounded-full transition-all ${
-                      round.status === 'completed' ? 'bg-green-500'
-                      : round.status === 'failed' ? 'bg-red-500'
-                      : 'bg-blue-500'
-                    }`}
-                    style={{ width: `${progressPercent}%` }}
-                  />
+                  <div className="h-2 rounded-full transition-all bg-green-500" style={{ width: '100%' }} />
                 </div>
               </div>
 
-              {/* Retry button for failed distributions */}
-              {failedCount > 0 && (
-                <div className="mt-4">
-                  <Button
-                    variant="outline"
-                    className="w-full border-red-500 text-red-500 hover:bg-red-500/10"
-                    onClick={() => handleRetryFailed(round.id)}
-                    disabled={isRetrying}
-                  >
-                    {isRetrying ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                        Retrying...
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="h-4 w-4 mr-2" />
-                        Retry {failedCount} Failed Distributions
-                      </>
-                    )}
-                  </Button>
-                </div>
-              )}
-
-              {/* Payments table */}
-              {roundPayments.length > 0 && (
+              {/* Collapsible Payments table from transactions */}
+              {round.payments.length > 0 && (
                 <div className="mt-6 pt-6 border-t">
-                  <h4 className="font-medium mb-3">Distribution Details</h4>
-                  <div className="overflow-x-auto max-h-64 overflow-y-auto">
-                    <table className="w-full text-sm table-fixed">
-                      <thead className="sticky top-0 bg-background">
-                        <tr className="border-b">
-                          <th className="text-left py-2 px-2 font-medium w-28">Wallet</th>
-                          <th className="text-right py-2 px-2 font-medium w-24">$/Share</th>
-                          <th className="text-right py-2 px-2 font-medium w-20">Shares</th>
-                          <th className="text-right py-2 px-2 font-medium w-24">Total</th>
-                          <th className="text-center py-2 px-2 font-medium w-20">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {roundPayments.map((payment) => (
-                          <tr key={payment.id} className="border-b hover:bg-muted/50">
-                            <td className="py-2 px-2">
-                              <WalletAddress address={payment.wallet} />
-                            </td>
-                            <td className="py-2 px-2 text-right text-muted-foreground text-xs">
-                              ${payment.dividend_per_share?.toFixed(4) || '—'}
-                            </td>
-                            <td className="py-2 px-2 text-right text-xs">
-                              {(payment.shares || 0).toLocaleString()}
-                            </td>
-                            <td className="py-2 px-2 text-right font-medium text-xs">
-                              ${(payment.amount || 0).toLocaleString()}
-                            </td>
-                            <td className="py-2 px-2 text-center">
-                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs ${
-                                payment.status === 'sent' ? 'bg-green-500/10 text-green-500'
-                                : payment.status === 'failed' ? 'bg-red-500/10 text-red-500'
-                                : 'bg-yellow-500/10 text-yellow-500'
-                              }`}>
-                                {payment.status === 'sent' ? <CheckCircle className="h-3 w-3" />
-                                  : payment.status === 'failed' ? <XCircle className="h-3 w-3" />
-                                  : <Clock className="h-3 w-3" />
-                                }
-                                {payment.status}
-                              </span>
-                            </td>
+                  <button
+                    onClick={toggleExpanded}
+                    className="flex items-center gap-2 font-medium mb-3 hover:text-primary transition-colors w-full text-left"
+                  >
+                    {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    Distribution Details ({round.payments.length} payments)
+                  </button>
+                  {isExpanded && (
+                    <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                      <table className="w-full text-sm table-fixed">
+                        <thead className="sticky top-0 bg-background">
+                          <tr className="border-b">
+                            <th className="text-left py-2 px-2 font-medium w-28">Wallet</th>
+                            <th className="text-right py-2 px-2 font-medium w-24">$/Share</th>
+                            <th className="text-right py-2 px-2 font-medium w-20">Shares</th>
+                            <th className="text-right py-2 px-2 font-medium w-24">Total</th>
+                            <th className="text-center py-2 px-2 font-medium w-20">Status</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {round.payments.map((tx) => {
+                            const txData = tx.data as any
+                            return (
+                              <tr key={tx.id} className="border-b hover:bg-muted/50">
+                                <td className="py-2 px-2">
+                                  <WalletAddress address={tx.wallet_to || ''} />
+                                </td>
+                                <td className="py-2 px-2 text-right text-muted-foreground text-xs">
+                                  ${txData?.dividend_per_share?.toFixed(4) || '—'}
+                                </td>
+                                <td className="py-2 px-2 text-right text-xs">
+                                  {(txData?.shares || 0).toLocaleString()}
+                                </td>
+                                <td className="py-2 px-2 text-right font-medium text-xs">
+                                  ${(tx.amount || 0).toLocaleString()}
+                                </td>
+                                <td className="py-2 px-2 text-center">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-green-500/10 text-green-500">
+                                    <CheckCircle className="h-3 w-3" />
+                                    sent
+                                  </span>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -471,50 +527,7 @@ export default function DividendsPage() {
         )
       })}
 
-      {/* Distribution History */}
-      {dividendRounds.length > 5 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Distribution History</CardTitle>
-            <CardDescription>All dividend distributions</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-medium">Round</th>
-                    <th className="text-left py-3 px-4 font-medium">Total Pool</th>
-                    <th className="text-left py-3 px-4 font-medium">Per Share</th>
-                    <th className="text-left py-3 px-4 font-medium">Recipients</th>
-                    <th className="text-left py-3 px-4 font-medium">Status</th>
-                    <th className="text-left py-3 px-4 font-medium">Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dividendRounds.slice(5).map((round) => (
-                    <tr key={round.id} className="border-b hover:bg-muted/50">
-                      <td className="py-3 px-4 font-medium">#{round.round_number}</td>
-                      <td className="py-3 px-4">${round.total_pool.toLocaleString()}</td>
-                      <td className="py-3 px-4">${round.amount_per_share.toFixed(4)}</td>
-                      <td className="py-3 px-4">{round.total_recipients}</td>
-                      <td className="py-3 px-4">
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs capitalize ${statusColors[round.status]}`}>
-                          {statusIcons[round.status]}
-                          {round.status}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-muted-foreground">{formatDate(round.created_at)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {dividendRounds.length === 0 && !loading && (
+      {transactionBasedRounds.length === 0 && !loading && (
         <Card>
           <CardContent className="py-12">
             <div className="text-center">
@@ -523,10 +536,12 @@ export default function DividendsPage() {
               <p className="text-muted-foreground mb-4">
                 Create your first dividend distribution to automatically send payments to all shareholders.
               </p>
-              <Button onClick={() => setShowCreateModal(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Create Distribution
-              </Button>
+              {!isViewingHistorical && (
+                <Button onClick={() => setShowCreateModal(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Distribution
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
