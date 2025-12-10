@@ -492,12 +492,20 @@ class ApiClient {
   }
 
   // Enhanced Cap Table
-  async getEnhancedCapTable(tokenId: number) {
-    return this.request<EnhancedCapTableResponse>(`/tokens/${tokenId}/captable/enhanced`)
+  async getEnhancedCapTable(tokenId: number, slot?: number) {
+    let url = `/tokens/${tokenId}/captable/enhanced`
+    if (slot !== undefined) {
+      url += `?slot=${slot}`
+    }
+    return this.request<EnhancedCapTableResponse>(url)
   }
 
-  async getEnhancedCapTableByWallet(tokenId: number) {
-    return this.request<EnhancedCapTableByWalletResponse>(`/tokens/${tokenId}/captable/enhanced/by-wallet`)
+  async getEnhancedCapTableByWallet(tokenId: number, slot?: number) {
+    let url = `/tokens/${tokenId}/captable/enhanced/by-wallet`
+    if (slot !== undefined) {
+      url += `?slot=${slot}`
+    }
+    return this.request<EnhancedCapTableByWalletResponse>(url)
   }
 
   // Simulators

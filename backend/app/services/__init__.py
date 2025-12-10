@@ -2,6 +2,7 @@
 from .solana_client import SolanaClient
 from .waterfall import calculate_waterfall, calculate_waterfall_scenarios, WaterfallPosition
 from .dilution import calculate_dilution, CurrentHolder, SimulatedRound
+from .transaction_service import TransactionService, TokenState
 
 # Lazy imports for indexer (requires complete model setup)
 def get_indexer():
@@ -24,4 +25,7 @@ __all__ = [
     "calculate_dilution",
     "CurrentHolder",
     "SimulatedRound",
+    # Transaction service
+    "TransactionService",
+    "TokenState",
 ]

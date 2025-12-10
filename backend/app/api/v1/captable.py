@@ -26,7 +26,9 @@ from app.schemas.captable import (
     WalletSummary,
 )
 from app.models.share_class import ShareClass, SharePosition
+from app.models.unified_transaction import UnifiedTransaction, TransactionType
 from app.services.solana_client import get_solana_client
+from app.services.transaction_service import TransactionService, TokenState
 
 router = APIRouter()
 
@@ -366,6 +368,7 @@ async def export_captable(
 @router.get("/enhanced", response_model=EnhancedCapTableResponse)
 async def get_enhanced_captable(
     token_id: int = Path(...),
+    slot: Optional[int] = None,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -378,6 +381,9 @@ async def get_enhanced_captable(
     - Unrealized gains/losses
     - Share class breakdown with priorities and preference multiples
     - Individual positions with full investment details
+
+    Args:
+        slot: Optional historical slot to reconstruct state at. If not provided, returns current state.
     """
     # Get token info with valuation
     result = await db.execute(
@@ -394,36 +400,68 @@ async def get_enhanced_captable(
     solana_client = await get_solana_client()
     current_slot = await solana_client.get_slot()
 
-    # Get all share classes for this token
+    # Get all share classes for this token (these don't change historically for now)
     result = await db.execute(
         select(ShareClass)
         .where(ShareClass.token_id == token_id)
         .order_by(ShareClass.priority)
     )
     share_classes = result.scalars().all()
+    share_class_map = {sc.id: sc for sc in share_classes}
 
-    # Get all share positions
-    result = await db.execute(
-        select(SharePosition)
-        .where(SharePosition.token_id == token_id)
-        .where(SharePosition.shares > 0)
-    )
-    positions = result.scalars().all()
+    # Determine if we need historical reconstruction
+    target_slot = slot if slot is not None else current_slot
+    is_historical = slot is not None
+
+    if is_historical:
+        # Reconstruct state from unified transactions
+        tx_service = TransactionService(db)
+        state = await tx_service.reconstruct_at_slot(token_id, target_slot)
+
+        # Build positions from reconstructed state
+        positions_data = []
+        for (wallet, class_id), pos_state in state.positions.items():
+            if pos_state.shares > 0:
+                positions_data.append({
+                    'wallet': wallet,
+                    'share_class_id': class_id,
+                    'shares': pos_state.shares,
+                    'cost_basis': pos_state.cost_basis,
+                    'priority': pos_state.priority,
+                    'preference_multiple': pos_state.preference_multiple,
+                })
+
+        total_shares = state.total_supply
+    else:
+        # Get all share positions from database (current state)
+        result = await db.execute(
+            select(SharePosition)
+            .where(SharePosition.token_id == token_id)
+            .where(SharePosition.shares > 0)
+        )
+        positions = result.scalars().all()
+
+        positions_data = [{
+            'wallet': p.wallet,
+            'share_class_id': p.share_class_id,
+            'shares': p.shares,
+            'cost_basis': p.cost_basis,
+            'priority': share_class_map.get(p.share_class_id, type('obj', (object,), {'priority': 99})).priority,
+            'preference_multiple': share_class_map.get(p.share_class_id, type('obj', (object,), {'preference_multiple': 1.0})).preference_multiple,
+        } for p in positions]
+
+        total_shares = sum(p['shares'] for p in positions_data)
 
     # Calculate totals
-    total_shares = sum(p.shares for p in positions)
-    total_cost_basis = sum(p.cost_basis for p in positions)
+    total_cost_basis = sum(p['cost_basis'] for p in positions_data)
     price_per_share = current_valuation // total_shares if total_shares > 0 else 0
     total_current_value = total_shares * price_per_share
-
-    # Build share class map for lookup
-    share_class_map = {sc.id: sc for sc in share_classes}
 
     # Build share class summaries
     class_summaries = []
     for sc in share_classes:
-        class_positions = [p for p in positions if p.share_class_id == sc.id]
-        class_shares = sum(p.shares for p in class_positions)
+        class_positions = [p for p in positions_data if p['share_class_id'] == sc.id]
+        class_shares = sum(p['shares'] for p in class_positions)
         class_value = class_shares * price_per_share
         class_summaries.append(ShareClassSummary(
             id=sc.id,
@@ -433,48 +471,48 @@ async def get_enhanced_captable(
             preference_multiple=sc.preference_multiple,
             total_shares=class_shares,
             total_value=class_value,
-            holder_count=len(set(p.wallet for p in class_positions)),
+            holder_count=len(set(p['wallet'] for p in class_positions)),
         ))
 
     # Calculate shares per class for class ownership calculation
     shares_per_class = {}
-    for p in positions:
-        if p.share_class_id not in shares_per_class:
-            shares_per_class[p.share_class_id] = 0
-        shares_per_class[p.share_class_id] += p.shares
+    for p in positions_data:
+        if p['share_class_id'] not in shares_per_class:
+            shares_per_class[p['share_class_id']] = 0
+        shares_per_class[p['share_class_id']] += p['shares']
 
     # Build position entries
     position_entries = []
     unique_wallets = set()
-    for p in positions:
-        sc = share_class_map.get(p.share_class_id)
+    for p in positions_data:
+        sc = share_class_map.get(p['share_class_id'])
         if not sc:
             continue
 
-        unique_wallets.add(p.wallet)
-        current_value = p.shares * price_per_share
-        class_shares = shares_per_class.get(p.share_class_id, 1)
+        unique_wallets.add(p['wallet'])
+        current_value = p['shares'] * price_per_share
+        class_shares = shares_per_class.get(p['share_class_id'], 1)
 
         position_entries.append(EnhancedCapTableEntry(
-            wallet=p.wallet,
+            wallet=p['wallet'],
             share_class_id=sc.id,
             share_class_name=sc.name,
             share_class_symbol=sc.symbol,
-            shares=p.shares,
-            cost_basis=p.cost_basis,
+            shares=p['shares'],
+            cost_basis=p['cost_basis'],
             current_value=current_value,
-            ownership_pct=round((p.shares / total_shares * 100), 4) if total_shares > 0 else 0,
-            class_ownership_pct=round((p.shares / class_shares * 100), 4) if class_shares > 0 else 0,
-            unrealized_gain=current_value - p.cost_basis,
+            ownership_pct=round((p['shares'] / total_shares * 100), 4) if total_shares > 0 else 0,
+            class_ownership_pct=round((p['shares'] / class_shares * 100), 4) if class_shares > 0 else 0,
+            unrealized_gain=current_value - p['cost_basis'],
             price_per_share=price_per_share,
-            preference_amount=int(p.cost_basis * sc.preference_multiple),
+            preference_amount=int(p['cost_basis'] * sc.preference_multiple),
         ))
 
     # Sort by ownership descending
     position_entries.sort(key=lambda x: x.shares, reverse=True)
 
     return EnhancedCapTableResponse(
-        slot=current_slot,
+        slot=target_slot,
         timestamp=datetime.utcnow(),
         current_valuation=current_valuation,
         price_per_share=price_per_share,
@@ -745,3 +783,214 @@ async def get_snapshot_v2_at_slot(
         vesting_schedules=snapshot.vesting_schedules,
         share_classes=snapshot.share_classes,
     )
+
+
+# ============================================================
+# Transaction-based State Reconstruction Endpoints
+# ============================================================
+
+@router.get("/state/{slot}")
+async def get_reconstructed_state_at_slot(
+    token_id: int = Path(...),
+    slot: int = Path(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Reconstruct complete token state at any slot by replaying transactions.
+
+    This uses the unified transaction log to replay all events up to the
+    specified slot, producing an accurate point-in-time state without
+    requiring pre-computed snapshots.
+
+    Returns:
+    - approved_wallets: Set of wallets approved at that slot
+    - balances: Map of wallet -> total shares
+    - positions: List of share positions with share class details
+    - vesting_schedules: Active vesting schedules with release amounts
+    - total_supply: Total shares outstanding
+    - is_paused: Whether the token was paused
+    """
+    # Verify token exists
+    result = await db.execute(
+        select(Token).where(Token.token_id == token_id)
+    )
+    token = result.scalar_one_or_none()
+    if not token:
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    # Reconstruct state using transaction service
+    tx_service = TransactionService(db)
+    state = await tx_service.reconstruct_at_slot(token_id, slot)
+
+    # Convert internal state to API response format
+    positions_list = [
+        {
+            "wallet": pos.wallet,
+            "share_class_id": pos.share_class_id,
+            "shares": pos.shares,
+            "cost_basis": pos.cost_basis,
+            "priority": pos.priority,
+            "preference_multiple": pos.preference_multiple,
+        }
+        for pos in state.positions.values()
+    ]
+
+    vesting_list = [
+        {
+            "schedule_id": vs.schedule_id,
+            "beneficiary": vs.beneficiary,
+            "total_amount": vs.total_amount,
+            "released_amount": vs.released_amount,
+            "share_class_id": vs.share_class_id,
+            "is_terminated": vs.is_terminated,
+        }
+        for vs in state.vesting_schedules.values()
+    ]
+
+    return {
+        "slot": slot,
+        "token_id": token_id,
+        "approved_wallets": list(state.approved_wallets),
+        "balances": state.balances,
+        "positions": positions_list,
+        "vesting_schedules": vesting_list,
+        "total_supply": state.total_supply,
+        "is_paused": state.is_paused,
+        "holder_count": len([w for w, b in state.balances.items() if b > 0]),
+    }
+
+
+@router.get("/activity")
+async def get_token_activity(
+    token_id: int = Path(...),
+    limit: int = 50,
+    offset: int = 0,
+    tx_type: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get transaction activity feed for a token.
+
+    Returns recent transactions from the unified transaction log,
+    ordered by slot descending (newest first).
+
+    Args:
+        token_id: Token to get activity for
+        limit: Maximum records to return (default 50)
+        offset: Records to skip for pagination
+        tx_type: Optional filter by transaction type (e.g., "approval", "mint")
+    """
+    # Verify token exists
+    result = await db.execute(
+        select(Token).where(Token.token_id == token_id)
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    # Parse tx_type filter if provided
+    tx_types = None
+    if tx_type:
+        try:
+            tx_types = [TransactionType(tx_type)]
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid transaction type: {tx_type}")
+
+    # Get activity
+    tx_service = TransactionService(db)
+    transactions = await tx_service.get_activity(
+        token_id=token_id,
+        limit=limit,
+        offset=offset,
+        tx_types=tx_types,
+    )
+
+    return {
+        "transactions": [
+            {
+                "id": tx.id,
+                "slot": tx.slot,
+                "block_time": tx.block_time.isoformat() if tx.block_time else None,
+                "tx_type": tx.tx_type.value,
+                "wallet": tx.wallet,
+                "wallet_to": tx.wallet_to,
+                "amount": tx.amount,
+                "amount_secondary": tx.amount_secondary,
+                "share_class_id": tx.share_class_id,
+                "priority": tx.priority,
+                "preference_multiple": tx.preference_multiple,
+                "price_per_share": tx.price_per_share,
+                "reference_id": tx.reference_id,
+                "reference_type": tx.reference_type,
+                "data": tx.data,
+                "tx_signature": tx.tx_signature,
+                "triggered_by": tx.triggered_by,
+                "notes": tx.notes,
+                "created_at": tx.created_at.isoformat() if tx.created_at else None,
+            }
+            for tx in transactions
+        ],
+        "limit": limit,
+        "offset": offset,
+        "count": len(transactions),
+    }
+
+
+@router.get("/activity/wallet/{address}")
+async def get_wallet_activity(
+    token_id: int = Path(...),
+    address: str = Path(...),
+    limit: int = 50,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get transaction activity for a specific wallet.
+
+    Returns all transactions involving this wallet (either as sender
+    or recipient), ordered by slot descending.
+    """
+    # Verify token exists
+    result = await db.execute(
+        select(Token).where(Token.token_id == token_id)
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    tx_service = TransactionService(db)
+    transactions = await tx_service.get_wallet_activity(
+        wallet=address,
+        token_id=token_id,
+        limit=limit,
+        offset=offset,
+    )
+
+    return {
+        "wallet": address,
+        "transactions": [
+            {
+                "id": tx.id,
+                "slot": tx.slot,
+                "block_time": tx.block_time.isoformat() if tx.block_time else None,
+                "tx_type": tx.tx_type.value,
+                "wallet": tx.wallet,
+                "wallet_to": tx.wallet_to,
+                "amount": tx.amount,
+                "amount_secondary": tx.amount_secondary,
+                "share_class_id": tx.share_class_id,
+                "priority": tx.priority,
+                "preference_multiple": tx.preference_multiple,
+                "price_per_share": tx.price_per_share,
+                "reference_id": tx.reference_id,
+                "reference_type": tx.reference_type,
+                "data": tx.data,
+                "tx_signature": tx.tx_signature,
+                "triggered_by": tx.triggered_by,
+                "notes": tx.notes,
+                "created_at": tx.created_at.isoformat() if tx.created_at else None,
+            }
+            for tx in transactions
+        ],
+        "limit": limit,
+        "offset": offset,
+        "count": len(transactions),
+    }

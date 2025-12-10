@@ -14,7 +14,7 @@ class Token(Base):
     token_id = Column(Integer, unique=True, nullable=False, index=True)
     on_chain_config = Column(String(44), unique=True, nullable=False)
     mint_address = Column(String(44), unique=True, nullable=False)
-    symbol = Column(String(10), nullable=False, index=True)
+    symbol = Column(String(10), unique=True, nullable=False, index=True)
     name = Column(String(50), nullable=False)
     decimals = Column(Integer, nullable=False, default=0)
     total_supply = Column(BigInteger, nullable=False)

@@ -17,6 +17,8 @@ from app.schemas.allowlist import (
 )
 from app.services.solana_client import get_solana_client
 from app.services.history import HistoryService
+from app.services.transaction_service import TransactionService
+from app.models.unified_transaction import TransactionType
 from solders.pubkey import Pubkey
 
 router = APIRouter()
@@ -179,6 +181,16 @@ async def approve_wallet(request: ApproveWalletRequest, token_id: int = Path(...
             triggered_by="api:approve_wallet",
         )
 
+    # Record approval transaction
+    tx_service = TransactionService(db)
+    await tx_service.record(
+        token_id=token_id,
+        tx_type=TransactionType.APPROVAL,
+        wallet=request.address,
+        triggered_by="api:approve_wallet",
+        data={"previous_status": old_status},
+    )
+
     await db.commit()
     await db.refresh(wallet)
 
@@ -244,7 +256,19 @@ async def revoke_wallet(request: ApproveWalletRequest, token_id: int = Path(...)
         raise HTTPException(status_code=400, detail="Wallet already revoked")
 
     # Update wallet status
+    old_status = wallet.status
     wallet.status = "revoked"
+
+    # Record revocation transaction
+    tx_service = TransactionService(db)
+    await tx_service.record(
+        token_id=token_id,
+        tx_type=TransactionType.REVOCATION,
+        wallet=request.address,
+        triggered_by="api:revoke_wallet",
+        data={"previous_status": old_status},
+    )
+
     await db.commit()
 
     # Build transaction data
@@ -290,6 +314,7 @@ async def bulk_approve(request: BulkApproveRequest, token_id: int = Path(...), d
     solana_client = await get_solana_client()
     token_config_pda, _ = solana_client.derive_token_config_pda(Pubkey.from_string(token.mint_address))
 
+    tx_service = TransactionService(db)
     instructions = []
     errors = []
 
@@ -306,6 +331,7 @@ async def bulk_approve(request: BulkApproveRequest, token_id: int = Path(...), d
                 )
             )
             wallet = result.scalar_one_or_none()
+            old_status = wallet.status if wallet else None
 
             if not wallet:
                 wallet = Wallet(
@@ -318,6 +344,15 @@ async def bulk_approve(request: BulkApproveRequest, token_id: int = Path(...), d
             elif wallet.status != "active":
                 wallet.status = "active"
                 wallet.approved_at = datetime.utcnow()
+
+            # Record approval transaction
+            await tx_service.record(
+                token_id=token_id,
+                tx_type=TransactionType.APPROVAL,
+                wallet=wallet_address,
+                triggered_by="api:bulk_approve",
+                data={"previous_status": old_status},
+            )
 
             instructions.append({
                 "wallet": wallet_address,

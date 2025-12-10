@@ -21,6 +21,9 @@ except ImportError:
     async def start_indexer(): pass
     async def stop_indexer(): pass
 
+# Vesting scheduler for explicit release events
+from app.services.vesting_scheduler import start_vesting_scheduler, stop_vesting_scheduler
+
 # Configure structured logging
 structlog.configure(
     processors=[
@@ -68,9 +71,14 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("Transaction indexer not available - running in limited mode")
 
+    # Start vesting scheduler for explicit release events
+    await start_vesting_scheduler(interval_seconds=60)
+    logger.info("Vesting scheduler started")
+
     yield
 
     # Cleanup
+    await stop_vesting_scheduler()
     await stop_indexer()
     await close_solana_client()
     await close_db()

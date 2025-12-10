@@ -1,21 +1,30 @@
 """Pytest configuration and fixtures for ChainEquity backend tests"""
 import asyncio
+import os
 import pytest
+import pytest_asyncio
 from typing import AsyncGenerator, Generator
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.pool import NullPool
+from dotenv import load_dotenv
 
 from app.main import app
 from app.models.database import Base, get_db
 from app.config import get_settings
 
-# Test database URL (use SQLite for tests)
-TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+# Load environment variables
+load_dotenv()
 
-# Create test engine
+# Test database URL - use PostgreSQL from environment (same as dev, uses transaction rollback for isolation)
+TEST_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://chainequity:chainequity@localhost:5432/chainequity")
+
+# Create test engine with NullPool to avoid connection pool issues in tests
+# NullPool creates a new connection for each request and closes it immediately after
 test_engine = create_async_engine(
     TEST_DATABASE_URL,
     echo=False,
+    poolclass=NullPool,
 )
 
 # Create test session factory
@@ -34,22 +43,21 @@ def event_loop() -> Generator:
     loop.close()
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Create a fresh database session for each test"""
-    # Create tables
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """
+    Create a database session for each test.
 
-    async with TestSessionLocal() as session:
+    Uses the actual database - tests should use unique identifiers to avoid conflicts.
+    """
+    session = TestSessionLocal()
+    try:
         yield session
-
-    # Drop tables after test
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    finally:
+        await session.close()
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """Create an async test client"""
 

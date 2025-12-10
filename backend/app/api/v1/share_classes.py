@@ -11,6 +11,8 @@ from app.models.token import Token
 from app.models.share_class import ShareClass, SharePosition, ShareGrant
 from app.models.wallet import Wallet
 from app.services.history import HistoryService
+from app.services.transaction_service import TransactionService
+from app.models.unified_transaction import TransactionType
 import structlog
 
 logger = structlog.get_logger()
@@ -462,25 +464,30 @@ async def issue_shares(
         status="completed",
     )
     db.add(grant)
+    await db.flush()  # Get grant.id
+
+    # Record SHARE_GRANT transaction to unified log
+    tx_service = TransactionService(db)
+    await tx_service.record(
+        token_id=token_id,
+        tx_type=TransactionType.SHARE_GRANT,
+        slot=current_slot,
+        wallet=request.recipient_wallet,
+        amount=request.shares,
+        amount_secondary=request.cost_basis,
+        share_class_id=request.share_class_id,
+        priority=share_class.priority,
+        preference_multiple=share_class.preference_multiple,
+        price_per_share=request.price_per_share or (request.cost_basis // request.shares if request.shares > 0 else 0),
+        reference_id=grant.id,
+        reference_type="share_grant",
+        triggered_by="api:issue_shares",
+        notes=request.notes,
+    )
 
     await db.commit()
     await db.refresh(position)
     await db.refresh(grant)
-
-    # Auto-create snapshot after share issuance
-    try:
-        history_service = HistoryService(db)
-        await history_service.create_snapshot(
-            token_id=token_id,
-            trigger=f"share_grant:{grant.id}",
-            slot=current_slot,
-        )
-        await db.commit()
-    except Exception as e:
-        # Log but don't fail the issuance if snapshot fails
-        import structlog
-        logger = structlog.get_logger()
-        logger.warning("Failed to create auto-snapshot after share issuance", error=str(e))
 
     return IssueSharesResponse(
         id=position.id,

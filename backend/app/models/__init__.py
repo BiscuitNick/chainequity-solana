@@ -17,6 +17,9 @@ from app.models.valuation import ValuationEvent
 # Historical state tracking
 from app.models.history import StateChange, ChangeType, CapTableSnapshotV2
 
+# Unified transaction log
+from app.models.unified_transaction import UnifiedTransaction, TransactionType
+
 __all__ = [
     "Base",
     "get_db",
@@ -43,4 +46,7 @@ __all__ = [
     "StateChange",
     "ChangeType",
     "CapTableSnapshotV2",
+    # Unified transaction log
+    "UnifiedTransaction",
+    "TransactionType",
 ]

@@ -20,6 +20,8 @@ from app.schemas.admin import (
     PauseRequest,
 )
 from app.services.solana_client import get_solana_client
+from app.services.transaction_service import TransactionService
+from app.models.unified_transaction import TransactionType
 from solders.pubkey import Pubkey
 
 router = APIRouter()
@@ -472,6 +474,22 @@ async def execute_split(
     )
     db.add(corporate_action)
 
+    # Record unified transaction for historical reconstruction
+    tx_service = TransactionService(db)
+    await tx_service.record(
+        token_id=token_id,
+        tx_type=TransactionType.STOCK_SPLIT,
+        slot=current_slot,
+        data={
+            "numerator": request.numerator,
+            "denominator": request.denominator,
+            "old_total_supply": old_total_supply,
+            "new_total_supply": new_total_supply,
+        },
+        triggered_by="system",
+        notes=f"{action_type}: {request.numerator}:{request.denominator}",
+    )
+
     await db.commit()
 
     return {
@@ -538,6 +556,20 @@ async def execute_change_symbol(
         slot=current_slot,
     )
     db.add(corporate_action)
+
+    # Record unified transaction for historical reconstruction
+    tx_service = TransactionService(db)
+    await tx_service.record(
+        token_id=token_id,
+        tx_type=TransactionType.SYMBOL_CHANGE,
+        slot=current_slot,
+        data={
+            "old_symbol": old_symbol,
+            "new_symbol": new_symbol,
+        },
+        triggered_by="system",
+        notes=f"Symbol changed from {old_symbol} to {new_symbol}",
+    )
 
     await db.commit()
 

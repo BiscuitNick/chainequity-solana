@@ -17,6 +17,8 @@ from app.schemas.governance import (
     VotingPowerResponse,
 )
 from app.services.solana_client import get_solana_client
+from app.services.transaction_service import TransactionService
+from app.models.unified_transaction import TransactionType
 from solders.pubkey import Pubkey
 
 router = APIRouter()
@@ -155,6 +157,31 @@ async def create_proposal(
         snapshot_slot=0,  # Would be current slot in production
     )
     db.add(new_proposal)
+    await db.flush()  # Get the proposal ID
+
+    # Get current slot for transaction recording
+    current_slot = await solana_client.get_slot()
+
+    # Record unified transaction for historical reconstruction
+    tx_service = TransactionService(db)
+    await tx_service.record(
+        token_id=token_id,
+        tx_type=TransactionType.PROPOSAL_CREATE,
+        slot=current_slot,
+        wallet=proposer,
+        reference_id=new_proposal.id,
+        reference_type="proposal",
+        data={
+            "proposal_number": next_num,
+            "action_type": request.action_type,
+            "action_data": request.action_data,
+            "description": request.description,
+            "voting_ends": voting_ends.isoformat(),
+        },
+        triggered_by=proposer,
+        notes=f"Proposal #{next_num}: {request.action_type}",
+    )
+
     await db.commit()
     await db.refresh(new_proposal)
 
@@ -240,6 +267,29 @@ async def vote_on_proposal(
     else:  # abstain
         proposal.votes_abstain += vote_weight
 
+    # Get current slot for transaction recording
+    solana_client = await get_solana_client()
+    current_slot = await solana_client.get_slot()
+
+    # Record unified transaction for historical reconstruction
+    tx_service = TransactionService(db)
+    await tx_service.record(
+        token_id=token_id,
+        tx_type=TransactionType.VOTE,
+        slot=current_slot,
+        wallet=voter,
+        amount=vote_weight,
+        reference_id=proposal_id,
+        reference_type="proposal",
+        data={
+            "proposal_number": proposal.proposal_number,
+            "vote": request.vote.value,
+            "vote_weight": vote_weight,
+        },
+        triggered_by=voter,
+        notes=f"Vote {request.vote.value} on proposal #{proposal.proposal_number}",
+    )
+
     await db.commit()
     await db.refresh(proposal)
 
@@ -291,9 +341,39 @@ async def execute_proposal(
     token_config_pda, _ = solana_client.derive_token_config_pda(Pubkey.from_string(token.mint_address))
     proposal_pda, _ = solana_client.derive_proposal_pda(token_config_pda, proposal.proposal_number)
 
+    # Mark proposal as executed
+    proposal.executed_at = now
+    proposal.status = "executed"
+
+    # Get current slot for transaction recording
+    current_slot = await solana_client.get_slot()
+
+    # Record unified transaction for historical reconstruction
+    tx_service = TransactionService(db)
+    await tx_service.record(
+        token_id=token_id,
+        tx_type=TransactionType.PROPOSAL_EXECUTE,
+        slot=current_slot,
+        reference_id=proposal_id,
+        reference_type="proposal",
+        data={
+            "proposal_number": proposal.proposal_number,
+            "action_type": proposal.action_type,
+            "action_data": proposal.action_data,
+            "votes_for": proposal.votes_for,
+            "votes_against": proposal.votes_against,
+            "votes_abstain": proposal.votes_abstain,
+        },
+        triggered_by="system",
+        notes=f"Executed proposal #{proposal.proposal_number}: {proposal.action_type}",
+    )
+
+    await db.commit()
+
     return {
-        "message": "Execute transaction prepared for signing",
+        "message": "Proposal executed successfully",
         "proposal_pda": str(proposal_pda),
+        "executed_at": now.isoformat(),
         "instruction": {
             "program": str(solana_client.program_addresses.governance),
             "action": "execute_proposal",

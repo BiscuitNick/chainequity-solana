@@ -22,6 +22,7 @@ import {
   Ban,
   Trash2,
   TrendingDown,
+  AlertTriangle,
 } from 'lucide-react'
 import {
   api,
@@ -38,6 +39,7 @@ import {
 } from '@/lib/api'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { WalletAddress } from '@/components/WalletAddress'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 // Helper to format cents as dollars
 const formatDollars = (cents: number) => {
@@ -60,6 +62,9 @@ const formatDollarsDetailed = (cents: number) => {
 
 export default function InvestmentsPage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
+  const selectedSlot = useAppStore((state) => state.selectedSlot)
+  const setSelectedSlot = useAppStore((state) => state.setSelectedSlot)
+  const isViewingHistorical = selectedSlot !== null
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -121,7 +126,7 @@ export default function InvestmentsPage() {
     setError(null)
     try {
       const [capTableData, classesData, roundsData, convertiblesData] = await Promise.all([
-        api.getEnhancedCapTable(selectedToken.tokenId).catch(() => null),
+        api.getEnhancedCapTable(selectedToken.tokenId, selectedSlot ?? undefined).catch(() => null),
         api.getShareClasses(selectedToken.tokenId).catch(() => []),
         api.getFundingRounds(selectedToken.tokenId).catch(() => []),
         api.getConvertibles(selectedToken.tokenId).catch(() => []),
@@ -382,7 +387,7 @@ export default function InvestmentsPage() {
 
   useEffect(() => {
     fetchData()
-  }, [selectedToken])
+  }, [selectedToken, selectedSlot])
 
   if (!selectedToken) {
     return (
@@ -424,6 +429,29 @@ export default function InvestmentsPage() {
             <p className="text-red-500">{error}</p>
           </CardContent>
         </Card>
+      )}
+
+      {isViewingHistorical && (
+        <Alert className="border-amber-500/50 bg-amber-500/10">
+          <AlertTriangle className="h-4 w-4 text-amber-500" />
+          <AlertTitle className="text-amber-500">Viewing Historical Data</AlertTitle>
+          <AlertDescription className="text-amber-400">
+            Showing investment data reconstructed at slot {enhancedCapTable?.slot ?? selectedSlot}.
+            {enhancedCapTable?.slot !== selectedSlot && (
+              <span className="block text-xs mt-1">
+                Note: Showing nearest available data at slot {enhancedCapTable?.slot}
+              </span>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2 border-amber-500/50 text-amber-500 hover:bg-amber-500/10"
+              onClick={() => setSelectedSlot(null)}
+            >
+              Return to Live
+            </Button>
+          </AlertDescription>
+        </Alert>
       )}
 
       {/* Valuation Summary Cards */}

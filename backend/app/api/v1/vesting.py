@@ -20,6 +20,8 @@ from app.schemas.vesting import (
     ShareClassInfo,
 )
 from app.services.solana_client import get_solana_client
+from app.services.transaction_service import TransactionService
+from app.models.unified_transaction import TransactionType
 from solders.pubkey import Pubkey
 
 router = APIRouter()
@@ -212,6 +214,40 @@ async def create_vesting_schedule(
         revocable=request.revocable,
     )
     db.add(schedule)
+    await db.flush()  # Get schedule.id
+
+    # Get current slot for transaction recording
+    try:
+        current_slot = await solana_client.get_slot()
+    except Exception:
+        current_slot = 0
+
+    # Record VESTING_SCHEDULE_CREATE transaction
+    tx_service = TransactionService(db)
+    await tx_service.record(
+        token_id=token_id,
+        tx_type=TransactionType.VESTING_SCHEDULE_CREATE,
+        slot=current_slot,
+        wallet=request.beneficiary,
+        amount=request.total_amount,
+        amount_secondary=request.cost_basis,
+        share_class_id=request.share_class_id,
+        priority=share_class.priority if share_class else 99,
+        preference_multiple=share_class.preference_multiple if share_class else 1.0,
+        price_per_share=request.price_per_share,
+        reference_id=schedule.id,
+        reference_type="vesting_schedule",
+        triggered_by="api:create_vesting_schedule",
+        data={
+            "start_time": request.start_time,
+            "duration_seconds": request.duration_seconds,
+            "cliff_seconds": request.cliff_seconds,
+            "vesting_type": request.vesting_type.value,
+            "revocable": request.revocable,
+            "on_chain_address": str(vesting_pda),
+        },
+    )
+
     await db.commit()
     await db.refresh(schedule)
 
@@ -373,6 +409,34 @@ async def terminate_vesting(
     if newly_vested > 0:
         await _update_balance(db, token_id, schedule.beneficiary, newly_vested)
 
+    # Get current slot and record termination transaction
+    solana_client = await get_solana_client()
+    try:
+        current_slot = await solana_client.get_slot()
+    except Exception:
+        current_slot = 0
+
+    tx_service = TransactionService(db)
+    await tx_service.record(
+        token_id=token_id,
+        tx_type=TransactionType.VESTING_TERMINATE,
+        slot=current_slot,
+        wallet=schedule.beneficiary,
+        amount=preview.final_vested,
+        amount_secondary=preview.to_treasury,
+        share_class_id=schedule.share_class_id,
+        reference_id=schedule.id,
+        reference_type="vesting_schedule",
+        triggered_by="api:terminate_vesting",
+        data={
+            "termination_type": request.termination_type.value,
+            "current_vested": preview.current_vested,
+            "final_vested": preview.final_vested,
+            "to_treasury": preview.to_treasury,
+            "notes": request.notes,
+        },
+    )
+
     await db.commit()
     await db.refresh(schedule)
 
@@ -381,8 +445,6 @@ async def terminate_vesting(
         select(Token).where(Token.token_id == token_id)
     )
     token = result.scalar_one_or_none()
-
-    solana_client = await get_solana_client()
 
     return {
         "message": f"Successfully terminated vesting schedule ({request.termination_type.value})",
