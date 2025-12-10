@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { X, Calendar, Clock, AlertTriangle, Layers } from 'lucide-react'
 import { api, ShareClass } from '@/lib/api'
+import { ApprovedWalletSelector } from '@/components/ApprovedWalletSelector'
 
 interface CreateVestingScheduleModalProps {
   isOpen: boolean
@@ -273,12 +274,11 @@ export function CreateVestingScheduleModal({
             {/* Beneficiary Address */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Beneficiary Wallet Address</label>
-              <input
-                type="text"
+              <ApprovedWalletSelector
+                tokenId={tokenId}
                 value={beneficiary}
-                onChange={(e) => setBeneficiary(e.target.value)}
-                placeholder="Enter Solana wallet address"
-                className="w-full px-3 py-2 border rounded-md bg-background font-mono text-sm"
+                onChange={setBeneficiary}
+                placeholder="Select an approved wallet"
                 disabled={isSubmitting}
               />
               <p className="text-xs text-muted-foreground">

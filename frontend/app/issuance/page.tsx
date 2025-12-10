@@ -33,6 +33,7 @@ import {
 } from '@/lib/api'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { WalletAddress } from '@/components/WalletAddress'
+import { ApprovedWalletSelector } from '@/components/ApprovedWalletSelector'
 
 // Prepopulated share class templates
 // Priority: Lower number = higher priority in liquidation waterfall
@@ -70,6 +71,7 @@ export default function IssuancePage() {
   const [positions, setPositions] = useState<SharePosition[]>([])
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null)
   const [reconstructedState, setReconstructedState] = useState<ReconstructedState | null>(null)
+  const [allowlist, setAllowlist] = useState<{ address: string; status: string }[]>([])
 
   const isHistoricalView = selectedSlot !== null
 
@@ -97,6 +99,10 @@ export default function IssuancePage() {
     setError(null)
     setReconstructedState(null)
     try {
+      // Fetch allowlist for wallet dropdown
+      const allowlistData = await api.getAllowlist(selectedToken.tokenId, 0, 100)
+      setAllowlist(allowlistData.filter(entry => entry.status === 'active'))
+
       const classes = await api.getShareClasses(selectedToken.tokenId)
       setShareClasses(classes)
 
@@ -449,12 +455,18 @@ export default function IssuancePage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="recipient">Recipient Wallet</Label>
-                  <Input
-                    id="recipient"
+                  <ApprovedWalletSelector
+                    tokenId={selectedToken.tokenId}
                     value={recipientWallet}
-                    onChange={(e) => setRecipientWallet(e.target.value)}
-                    placeholder="Solana wallet address"
+                    onChange={setRecipientWallet}
+                    placeholder="Select an approved wallet"
+                    allowlist={allowlist}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    {allowlist.length > 0
+                      ? `${allowlist.length} approved wallet${allowlist.length !== 1 ? 's' : ''} available`
+                      : 'No approved wallets. Add wallets to allowlist first.'}
+                  </p>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">

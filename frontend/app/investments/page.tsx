@@ -5,6 +5,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useAppStore } from '@/stores/useAppStore'
 import {
   DollarSign,
@@ -39,9 +46,11 @@ import {
   RoundType,
   InstrumentType,
   SafeType,
+  AllowlistEntry,
 } from '@/lib/api'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { WalletAddress } from '@/components/WalletAddress'
+import { ApprovedWalletSelector } from '@/components/ApprovedWalletSelector'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 // Helper to format cents as dollars
@@ -77,6 +86,7 @@ export default function InvestmentsPage() {
   const [fundingRounds, setFundingRounds] = useState<FundingRound[]>([])
   const [convertibles, setConvertibles] = useState<ConvertibleInstrument[]>([])
   const [positions, setPositions] = useState<SharePosition[]>([])
+  const [allowlist, setAllowlist] = useState<AllowlistEntry[]>([])
 
   // Expanded row states
   const [expandedConvertibleId, setExpandedConvertibleId] = useState<number | null>(null)
@@ -136,16 +146,18 @@ export default function InvestmentsPage() {
     setLoading(true)
     setError(null)
     try {
-      const [capTableData, classesData, roundsData, convertiblesData] = await Promise.all([
+      const [capTableData, classesData, roundsData, convertiblesData, allowlistData] = await Promise.all([
         api.getEnhancedCapTable(selectedToken.tokenId, selectedSlot ?? undefined).catch(() => null),
         api.getShareClasses(selectedToken.tokenId).catch(() => []),
         api.getFundingRounds(selectedToken.tokenId).catch(() => []),
         api.getConvertibles(selectedToken.tokenId).catch(() => []),
+        api.getAllowlist(selectedToken.tokenId, 0, 100).catch(() => []),
       ])
       setEnhancedCapTable(capTableData)
       setShareClasses(classesData)
       setFundingRounds(roundsData)
       setConvertibles(convertiblesData)
+      setAllowlist(allowlistData.filter(entry => entry.status === 'active'))
 
       // Fetch share positions for each class
       const allPositions: SharePosition[] = []
@@ -1535,11 +1547,12 @@ export default function InvestmentsPage() {
 
               <div>
                 <Label htmlFor="holderWallet">Holder Wallet Address</Label>
-                <Input
-                  id="holderWallet"
+                <ApprovedWalletSelector
+                  tokenId={selectedToken.tokenId}
                   value={convertibleHolderWallet}
-                  onChange={(e) => setConvertibleHolderWallet(e.target.value)}
-                  placeholder="Solana wallet address"
+                  onChange={setConvertibleHolderWallet}
+                  placeholder="Select wallet"
+                  allowlist={allowlist}
                 />
               </div>
 
@@ -1733,11 +1746,12 @@ export default function InvestmentsPage() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div>
                       <Label htmlFor="investorWallet">Wallet Address</Label>
-                      <Input
-                        id="investorWallet"
+                      <ApprovedWalletSelector
+                        tokenId={selectedToken.tokenId}
                         value={investorWallet}
-                        onChange={(e) => setInvestorWallet(e.target.value)}
-                        placeholder="Solana wallet"
+                        onChange={setInvestorWallet}
+                        placeholder="Select wallet"
+                        allowlist={allowlist}
                       />
                     </div>
                     <div>
