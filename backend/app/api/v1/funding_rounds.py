@@ -16,6 +16,7 @@ from app.models.wallet import Wallet
 from app.models.snapshot import CurrentBalance
 from app.models.unified_transaction import TransactionType
 from app.services.transaction_service import TransactionService
+from app.services.solana_client import get_solana_client
 from app.schemas.investment import (
     CreateFundingRoundRequest,
     AddInvestmentRequest,
@@ -112,23 +113,34 @@ async def create_funding_round(
     if request.pre_money_valuation <= 0:
         raise HTTPException(status_code=400, detail="Pre-money valuation must be positive")
 
-    # Calculate fully diluted shares from actual share positions
-    result = await db.execute(
-        select(func.coalesce(func.sum(SharePosition.shares), 0))
-        .where(SharePosition.token_id == token_id)
-    )
-    fully_diluted_shares = result.scalar() or 0
+    # Get fully diluted shares using transaction-based state reconstruction
+    # This is the source of truth for issued shares
+    solana_client = await get_solana_client()
+    current_slot = await solana_client.get_slot()
+    tx_service = TransactionService(db)
+    state = await tx_service.reconstruct_at_slot(token_id, current_slot)
 
-    # Also check CurrentBalance for on-chain shares
-    result = await db.execute(
-        select(func.coalesce(func.sum(CurrentBalance.balance), 0))
-        .where(CurrentBalance.token_id == token_id)
-    )
-    onchain_shares = result.scalar() or 0
+    # Sum all shares across all positions
+    fully_diluted_shares = sum(pos.shares for pos in state.positions.values())
 
-    # Use the maximum of the various sources, with token.total_supply as fallback
-    # (useful when indexer hasn't run yet but token was created with total_supply)
-    fully_diluted_shares = max(fully_diluted_shares, onchain_shares, token.total_supply or 0, 1)
+    # Fallback to SharePosition table if no transactions found
+    if fully_diluted_shares == 0:
+        result = await db.execute(
+            select(func.coalesce(func.sum(SharePosition.shares), 0))
+            .where(SharePosition.token_id == token_id)
+        )
+        fully_diluted_shares = result.scalar() or 0
+
+    # Fallback to CurrentBalance for on-chain shares
+    if fully_diluted_shares == 0:
+        result = await db.execute(
+            select(func.coalesce(func.sum(CurrentBalance.balance), 0))
+            .where(CurrentBalance.token_id == token_id)
+        )
+        fully_diluted_shares = result.scalar() or 0
+
+    # Use at least 1 share to avoid division by zero
+    fully_diluted_shares = max(fully_diluted_shares, 1)
 
     # Calculate price per share
     price_per_share = request.pre_money_valuation // fully_diluted_shares

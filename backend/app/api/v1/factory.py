@@ -158,8 +158,8 @@ async def create_token(request: CreateTokenRequest, db: AsyncSession = Depends(g
         "admin_threshold": request.admin_threshold,
     }
 
-    # Calculate total supply with decimals
-    total_supply = request.initial_supply * (10 ** request.decimals)
+    # Store the user-provided supply directly (decimals are for display formatting only)
+    total_supply = request.initial_supply
 
     # Create the token record
     new_token = Token(
