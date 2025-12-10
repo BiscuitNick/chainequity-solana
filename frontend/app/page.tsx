@@ -30,7 +30,7 @@ type Activity = {
   splitDenominator?: number
 }
 
-type ActivityFilter = 'all' | 'transfer' | 'mint' | 'share_grant' | 'approval' | 'convertible_convert' | 'dividend_payment' | 'vesting_release' | 'stock_split' | 'funding_round' | 'other'
+type ActivityFilter = 'all' | 'shares' | 'transfer' | 'approval' | 'dividend_payment' | 'stock_split' | 'funding_round' | 'other'
 
 const ITEMS_PER_PAGE = 10
 
@@ -55,13 +55,17 @@ export default function DashboardPage() {
   const isViewingHistorical = selectedSlot !== null
 
   // Filter activities based on selected filter
-  const knownTypes = ['transfer', 'mint', 'share_grant', 'approval', 'convertible_convert', 'dividend_payment', 'vesting_release', 'stock_split', 'funding_round_create', 'funding_round_close']
+  const knownTypes = ['transfer', 'mint', 'share_grant', 'investment', 'approval', 'convertible_convert', 'dividend_payment', 'vesting_release', 'stock_split', 'funding_round_create', 'funding_round_close']
+  // Share-related types for "Shares" filter
+  const shareTypes = ['mint', 'share_grant', 'investment', 'vesting_release', 'convertible_convert']
   const filteredActivity = activityFilter === 'all'
     ? allActivity
     : activityFilter === 'other'
     ? allActivity.filter(a => !knownTypes.includes(a.type))
     : activityFilter === 'funding_round'
     ? allActivity.filter(a => a.type === 'funding_round_create' || a.type === 'funding_round_close')
+    : activityFilter === 'shares'
+    ? allActivity.filter(a => shareTypes.includes(a.type))
     : allActivity.filter(a => a.type === activityFilter)
 
   // Paginate
@@ -106,11 +110,17 @@ export default function DashboardPage() {
     let to = tx.wallet_to || tx.wallet || ''
 
     if (tx.tx_type === 'mint' || tx.tx_type === 'share_grant') {
-      from = tx.tx_type === 'mint' ? 'MINT' : 'GRANT'
+      // amount_secondary stores cost_basis: 0 = free grant, >0 = investment
+      const hasCost = tx.amount_secondary && tx.amount_secondary > 0
+      from = hasCost ? 'INVESTMENT' : 'GRANT'
+      to = tx.wallet || ''
+    } else if (tx.tx_type === 'investment') {
+      // Funding round investments always have cost
+      from = 'INVESTMENT'
       to = tx.wallet || ''
     } else if (tx.tx_type === 'convertible_convert') {
-      // For conversion, show instrument type as 'from' and wallet as 'to'
-      from = tx.data?.instrument_type?.toUpperCase() || 'CONVERT'
+      // For conversion, show CONVERT as source
+      from = 'CONVERT'
       to = tx.wallet || ''
     } else if (tx.tx_type === 'stock_split') {
       // For stock split, from/to represent the ratio
@@ -286,11 +296,11 @@ export default function DashboardPage() {
     const type = activity.type
     switch (field) {
       case 'from':
-        return ['transfer', 'mint', 'share_grant', 'stock_split', 'convertible_convert', 'vesting_release', 'dividend_payment'].includes(type)
+        return ['transfer', 'mint', 'share_grant', 'investment', 'stock_split', 'convertible_convert', 'vesting_release', 'dividend_payment'].includes(type)
       case 'to':
-        return ['transfer', 'mint', 'share_grant', 'approval', 'revocation', 'stock_split', 'convertible_convert', 'vesting_release', 'dividend_payment'].includes(type)
+        return ['transfer', 'mint', 'share_grant', 'investment', 'approval', 'revocation', 'stock_split', 'convertible_convert', 'vesting_release', 'dividend_payment'].includes(type)
       case 'amount':
-        return ['transfer', 'mint', 'share_grant', 'burn', 'convertible_convert', 'vesting_release', 'dividend_payment'].includes(type)
+        return ['transfer', 'mint', 'share_grant', 'investment', 'burn', 'convertible_convert', 'vesting_release', 'dividend_payment'].includes(type)
       default:
         return true
     }
@@ -306,6 +316,36 @@ export default function DashboardPage() {
       minute: '2-digit',
       second: '2-digit',
     })
+  }
+
+  // Show empty state when no token is selected
+  if (!selectedToken) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-muted-foreground">Overview of your tokenized securities</p>
+        </div>
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col items-center justify-center py-16">
+            <div className="text-center space-y-4">
+              <div className="mx-auto w-16 h-16 rounded-full bg-muted flex items-center justify-center">
+                <AlertTriangle className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold">No Tokens Available</h3>
+                <p className="text-muted-foreground mt-1">
+                  Create your first token to get started with ChainEquity.
+                </p>
+              </div>
+              <Button asChild>
+                <a href="/tokens">Go to Tokens Page</a>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -418,12 +458,9 @@ export default function DashboardPage() {
               className="text-sm border rounded px-2 py-1 bg-background"
             >
               <option value="all">All Activity ({allActivity.length})</option>
+              <option value="shares">Shares ({allActivity.filter(a => shareTypes.includes(a.type)).length})</option>
               <option value="transfer">Transfers ({allActivity.filter(a => a.type === 'transfer').length})</option>
-              <option value="mint">Mints ({allActivity.filter(a => a.type === 'mint').length})</option>
-              <option value="share_grant">Share Grants ({allActivity.filter(a => a.type === 'share_grant').length})</option>
-              <option value="convertible_convert">SAFE/Note Conversions ({allActivity.filter(a => a.type === 'convertible_convert').length})</option>
               <option value="dividend_payment">Dividends ({allActivity.filter(a => a.type === 'dividend_payment').length})</option>
-              <option value="vesting_release">Vesting Releases ({allActivity.filter(a => a.type === 'vesting_release').length})</option>
               <option value="stock_split">Stock Splits ({allActivity.filter(a => a.type === 'stock_split').length})</option>
               <option value="funding_round">Funding Rounds ({allActivity.filter(a => a.type === 'funding_round_create' || a.type === 'funding_round_close').length})</option>
               <option value="approval">Approvals ({allActivity.filter(a => a.type === 'approval').length})</option>
@@ -467,9 +504,8 @@ export default function DashboardPage() {
                                 <ChevronDown className="h-3 w-3 text-muted-foreground" />
                               )}
                               <span className={`text-xs px-1.5 py-0.5 rounded whitespace-nowrap ${
-                                activity.type === 'mint'
-                                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                  : activity.type === 'share_grant'
+                                // All share-related types get purple styling
+                                ['mint', 'share_grant', 'investment', 'vesting_release', 'convertible_convert'].includes(activity.type)
                                   ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
                                   : activity.type === 'transfer'
                                   ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
@@ -477,35 +513,27 @@ export default function DashboardPage() {
                                   ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
                                   : activity.type === 'stock_split'
                                   ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-                                  : activity.type === 'convertible_convert'
-                                  ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400'
-                                  : activity.type === 'vesting_release'
-                                  ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
                                   : activity.type === 'dividend_payment'
                                   ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
                                   : 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400'
                               }`}>
-                                {activity.type === 'mint' ? 'MINT'
-                                  : activity.type === 'share_grant' ? 'SHARES'
+                                {/* All share issuances show as SHARES */}
+                                {['mint', 'share_grant', 'investment', 'vesting_release', 'convertible_convert'].includes(activity.type)
+                                  ? 'SHARES'
                                   : activity.type === 'transfer' ? 'TRANSFER'
                                   : activity.type === 'approval' ? 'APPROVAL'
                                   : activity.type === 'stock_split' ? 'SPLIT'
-                                  : activity.type === 'convertible_convert' ? 'CONVERT'
-                                  : activity.type === 'vesting_release' ? 'VESTING RELEASE'
-                                  : activity.type === 'dividend_payment' ? 'DIVIDEND PAYMENT'
+                                  : activity.type === 'dividend_payment' ? 'DIVIDEND'
                                   : activity.type.toUpperCase().replace('_', ' ')}
                               </span>
                             </div>
-                            {activity.shareClass && (
-                              <span className="text-xs text-muted-foreground ml-1">({activity.shareClass})</span>
-                            )}
                           </td>
                           <td className="py-2 px-2">
                             {!isFieldRelevant(activity, 'from') ? (
                               <span className="text-muted-foreground">—</span>
                             ) : activity.type === 'stock_split' ? (
                               <span className="font-mono text-xs font-medium">{activity.splitDenominator || activity.from}</span>
-                            ) : activity.from === 'MINT' || activity.from === 'GRANT' || activity.from === 'SAFE' || activity.from === 'CONVERTIBLE_NOTE' || activity.from === 'CONVERT' || activity.from === 'VESTING' || activity.from === 'DIVIDEND' ? (
+                            ) : ['GRANT', 'INVESTMENT', 'CONVERT', 'VESTING', 'DIVIDEND'].includes(activity.from) ? (
                               <span className="font-mono text-xs">{activity.from}</span>
                             ) : activity.from ? (
                               <WalletAddress address={activity.from} />

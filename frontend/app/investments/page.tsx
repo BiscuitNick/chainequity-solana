@@ -96,9 +96,8 @@ export default function InvestmentsPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'waterfall' | 'dilution'>('overview')
   const [exitAmount, setExitAmount] = useState<string>('10000000') // $10M default
   const [waterfallResult, setWaterfallResult] = useState<WaterfallResponse | null>(null)
-  const [dilutionRounds, setDilutionRounds] = useState<SimulatedRoundInput[]>([
-    { name: 'Series A', pre_money_valuation: 2000000000, amount_raised: 500000000 }, // $20M pre, $5M raise
-  ])
+  const [dilutionRounds, setDilutionRounds] = useState<SimulatedRoundInput[]>([])
+  const [dilutionInitialized, setDilutionInitialized] = useState(false)
   const [dilutionResult, setDilutionResult] = useState<DilutionResponse | null>(null)
   const [simulatorLoading, setSimulatorLoading] = useState(false)
 
@@ -208,9 +207,11 @@ export default function InvestmentsPage() {
   }
 
   const addDilutionRound = () => {
+    const valuation = enhancedCapTable?.current_valuation || 0
+    const amountRaised = Math.round(valuation * 1.5)
     setDilutionRounds([
       ...dilutionRounds,
-      { name: `Round ${dilutionRounds.length + 1}`, pre_money_valuation: 5000000000, amount_raised: 1000000000 },
+      { name: `Round ${dilutionRounds.length + 1}`, pre_money_valuation: valuation, amount_raised: amountRaised },
     ])
   }
 
@@ -219,7 +220,9 @@ export default function InvestmentsPage() {
     if (field === 'name') {
       updated[index].name = value as string
     } else {
-      updated[index][field] = Math.round(parseFloat(value as string) * 100) // Convert dollars to cents
+      // Handle empty string or invalid input - set to 0 instead of NaN
+      const parsed = parseFloat(value as string)
+      updated[index][field] = isNaN(parsed) ? 0 : Math.round(parsed * 100) // Convert dollars to cents
     }
     setDilutionRounds(updated)
   }
@@ -441,6 +444,26 @@ export default function InvestmentsPage() {
   useEffect(() => {
     fetchData()
   }, [selectedToken, selectedSlot])
+
+  // Initialize dilution rounds with current valuation once data is loaded
+  useEffect(() => {
+    if (enhancedCapTable && !dilutionInitialized) {
+      const valuation = enhancedCapTable.current_valuation || 0
+      // Pre-money valuation = current valuation, Amount raised = 1.5x current valuation
+      const amountRaised = Math.round(valuation * 1.5)
+      setDilutionRounds([
+        { name: 'Series A', pre_money_valuation: valuation, amount_raised: amountRaised }
+      ])
+      setDilutionInitialized(true)
+    }
+  }, [enhancedCapTable, dilutionInitialized])
+
+  // Reset dilution initialization when token changes
+  useEffect(() => {
+    setDilutionInitialized(false)
+    setDilutionRounds([])
+    setDilutionResult(null)
+  }, [selectedToken])
 
   if (!selectedToken) {
     return (
@@ -1263,16 +1286,18 @@ export default function InvestmentsPage() {
                       <Label>Pre-Money Valuation ($)</Label>
                       <Input
                         type="number"
-                        value={round.pre_money_valuation / 100}
+                        value={round.pre_money_valuation ? round.pre_money_valuation / 100 : ''}
                         onChange={(e) => updateDilutionRound(index, 'pre_money_valuation', e.target.value)}
+                        placeholder="Enter valuation"
                       />
                     </div>
                     <div>
                       <Label>Amount Raised ($)</Label>
                       <Input
                         type="number"
-                        value={round.amount_raised / 100}
+                        value={round.amount_raised ? round.amount_raised / 100 : ''}
                         onChange={(e) => updateDilutionRound(index, 'amount_raised', e.target.value)}
+                        placeholder="Enter amount"
                       />
                     </div>
                     <div className="flex items-end">
@@ -1316,36 +1341,58 @@ export default function InvestmentsPage() {
                   </div>
 
                   <div>
-                    <h4 className="font-semibold mb-3">Impact on Existing Holders</h4>
+                    <h4 className="font-semibold mb-3">Existing Holders</h4>
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead>
                           <tr className="border-b">
                             <th className="text-left py-2 px-3 font-medium">Wallet</th>
-                            <th className="text-right py-2 px-3 font-medium">Ownership Before</th>
-                            <th className="text-right py-2 px-3 font-medium">Ownership After</th>
-                            <th className="text-right py-2 px-3 font-medium">Dilution</th>
-                            <th className="text-right py-2 px-3 font-medium">Value Before</th>
-                            <th className="text-right py-2 px-3 font-medium">Value After</th>
+                            <th className="text-right py-2 px-3 font-medium">Investment</th>
+                            <th className="text-right py-2 px-3 font-medium">Shares</th>
+                            <th className="text-right py-2 px-3 font-medium">Price/Share</th>
+                            <th className="text-right py-2 px-3 font-medium">Ownership</th>
+                            <th className="text-right py-2 px-3 font-medium">Value</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {dilutionResult.existing_holders.map((holder, idx) => (
-                            <tr key={idx} className="border-b hover:bg-muted/50">
-                              <td className="py-2 px-3">
-                                <WalletAddress address={holder.wallet} />
-                              </td>
-                              <td className="py-2 px-3 text-right">{holder.ownership_before.toFixed(2)}%</td>
-                              <td className="py-2 px-3 text-right">{holder.ownership_after.toFixed(2)}%</td>
-                              <td className="py-2 px-3 text-right text-red-500">-{holder.dilution_pct.toFixed(2)}%</td>
-                              <td className="py-2 px-3 text-right">{formatDollars(holder.value_before)}</td>
-                              <td className="py-2 px-3 text-right">
-                                <span className={holder.value_after >= holder.value_before ? 'text-green-500' : 'text-red-500'}>
-                                  {formatDollars(holder.value_after)}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
+                          {dilutionResult.existing_holders.map((holder, idx) => {
+                            const valueChangePct = holder.value_before > 0
+                              ? ((holder.value_after - holder.value_before) / holder.value_before) * 100
+                              : 0
+                            const pricePerShareBefore = holder.shares_before > 0
+                              ? holder.value_before / holder.shares_before
+                              : 0
+                            const pricePerShareAfter = holder.shares_after > 0
+                              ? holder.value_after / holder.shares_after
+                              : 0
+                            return (
+                              <tr key={idx} className="border-b hover:bg-muted/50">
+                                <td className="py-2 px-3">
+                                  <WalletAddress address={holder.wallet} />
+                                </td>
+                                <td className="py-2 px-3 text-right text-muted-foreground">—</td>
+                                <td className="py-2 px-3 text-right">
+                                  <div>{holder.shares_after.toLocaleString()}</div>
+                                  <div className="text-xs text-muted-foreground">was {holder.shares_before.toLocaleString()}</div>
+                                </td>
+                                <td className="py-2 px-3 text-right">
+                                  <div>{formatDollarsDetailed(pricePerShareAfter)}</div>
+                                  <div className="text-xs text-muted-foreground">was {formatDollarsDetailed(pricePerShareBefore)}</div>
+                                </td>
+                                <td className="py-2 px-3 text-right">
+                                  <div>{holder.ownership_after.toFixed(2)}%</div>
+                                  <div className="text-xs text-muted-foreground">was {holder.ownership_before.toFixed(2)}%</div>
+                                </td>
+                                <td className="py-2 px-3 text-right">
+                                  <div>{formatDollars(holder.value_after)}</div>
+                                  <div className="text-xs text-muted-foreground">was {formatDollars(holder.value_before)}</div>
+                                  <div className={`text-xs font-medium ${valueChangePct >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                    {valueChangePct >= 0 ? '+' : ''}{valueChangePct.toFixed(1)}%
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -1363,6 +1410,7 @@ export default function InvestmentsPage() {
                               <th className="text-right py-2 px-3 font-medium">Shares</th>
                               <th className="text-right py-2 px-3 font-medium">Price/Share</th>
                               <th className="text-right py-2 px-3 font-medium">Ownership</th>
+                              <th className="text-right py-2 px-3 font-medium">Value</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1373,6 +1421,7 @@ export default function InvestmentsPage() {
                                 <td className="py-2 px-3 text-right">{investor.shares_received.toLocaleString()}</td>
                                 <td className="py-2 px-3 text-right">{formatDollarsDetailed(investor.price_per_share)}</td>
                                 <td className="py-2 px-3 text-right">{investor.ownership_pct.toFixed(2)}%</td>
+                                <td className="py-2 px-3 text-right">{formatDollars(investor.amount_invested)}</td>
                               </tr>
                             ))}
                           </tbody>

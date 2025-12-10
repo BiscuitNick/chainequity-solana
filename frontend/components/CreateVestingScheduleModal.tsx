@@ -271,9 +271,9 @@ export function CreateVestingScheduleModal({
 
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
-            {/* Beneficiary Address */}
+            {/* Recipient Wallet */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Beneficiary Wallet Address</label>
+              <label className="text-sm font-medium">Recipient Wallet</label>
               <ApprovedWalletSelector
                 tokenId={tokenId}
                 value={beneficiary}

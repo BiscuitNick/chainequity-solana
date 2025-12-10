@@ -30,6 +30,7 @@ import {
   IssueSharesRequest,
   CreateShareClassRequest,
   ReconstructedState,
+  AllowlistEntry,
 } from '@/lib/api'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { WalletAddress } from '@/components/WalletAddress'
@@ -71,7 +72,7 @@ export default function IssuancePage() {
   const [positions, setPositions] = useState<SharePosition[]>([])
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null)
   const [reconstructedState, setReconstructedState] = useState<ReconstructedState | null>(null)
-  const [allowlist, setAllowlist] = useState<{ address: string; status: string }[]>([])
+  const [allowlist, setAllowlist] = useState<AllowlistEntry[]>([])
 
   const isHistoricalView = selectedSlot !== null
 
