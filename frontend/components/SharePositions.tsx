@@ -33,6 +33,7 @@ interface SharePositionsProps {
   shareClasses: ShareClass[]
   loading?: boolean
   onRefresh?: () => void
+  totalShares?: number // Total shares for calculating ownership %
 }
 
 export function SharePositions({
@@ -41,7 +42,10 @@ export function SharePositions({
   shareClasses,
   loading = false,
   onRefresh,
+  totalShares: propTotalShares,
 }: SharePositionsProps) {
+  // Calculate total shares from positions if not provided
+  const totalShares = propTotalShares ?? positions.reduce((sum, p) => sum + p.shares, 0)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [walletTransactions, setWalletTransactions] = useState<Record<string, UnifiedTransaction[]>>({})
   const [loadingTransactions, setLoadingTransactions] = useState<Set<string>>(new Set())
@@ -185,6 +189,7 @@ export function SharePositions({
                   <th className="text-left py-3 px-4 font-medium">Wallet</th>
                   <th className="text-left py-3 px-4 font-medium">Share Class</th>
                   <th className="text-right py-3 px-4 font-medium">Shares</th>
+                  <th className="text-right py-3 px-4 font-medium">Ownership</th>
                   <th className="text-right py-3 px-4 font-medium">Cost</th>
                   <th className="text-right py-3 px-4 font-medium">Current Value</th>
                   <th className="text-right py-3 px-4 font-medium">Liq. Preference</th>
@@ -237,6 +242,9 @@ export function SharePositions({
                           {position.shares.toLocaleString()}
                         </td>
                         <td className="py-3 px-4 text-right">
+                          {totalShares > 0 ? ((position.shares / totalShares) * 100).toFixed(2) : '0.00'}%
+                        </td>
+                        <td className="py-3 px-4 text-right">
                           {formatDollarsRounded(position.cost_basis)}
                         </td>
                         <td className="py-3 px-4 text-right">
@@ -253,7 +261,7 @@ export function SharePositions({
                       {/* Expanded transaction details */}
                       {isExpanded && (
                         <tr className="bg-muted/30">
-                          <td colSpan={6} className="py-3 px-4">
+                          <td colSpan={7} className="py-3 px-4">
                             <div className="space-y-3">
                               <h4 className="font-medium text-sm">Transaction History</h4>
                               {isLoadingTx ? (

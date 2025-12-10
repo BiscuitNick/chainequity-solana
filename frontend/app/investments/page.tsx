@@ -52,6 +52,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { WalletAddress } from '@/components/WalletAddress'
 import { ApprovedWalletSelector } from '@/components/ApprovedWalletSelector'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { SharePositions } from '@/components/SharePositions'
 
 // Helper to format cents as dollars
 const formatDollars = (cents: number) => {
@@ -90,7 +91,6 @@ export default function InvestmentsPage() {
 
   // Expanded row states
   const [expandedConvertibleId, setExpandedConvertibleId] = useState<number | null>(null)
-  const [expandedPositionKey, setExpandedPositionKey] = useState<string | null>(null)
 
   // Simulator states
   const [activeTab, setActiveTab] = useState<'overview' | 'waterfall' | 'dilution'>('overview')
@@ -946,147 +946,15 @@ export default function InvestmentsPage() {
           })()}
         </div>
 
-        {/* Shareholders Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              Shareholders
-            </CardTitle>
-            <CardDescription>
-              All investors and their share positions - click a row for details
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex justify-center py-8">
-                <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : positions.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">No shares have been issued yet</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-3 px-4 font-medium">Wallet</th>
-                      <th className="text-left py-3 px-4 font-medium">Share Class</th>
-                      <th className="text-center py-3 px-4 font-medium">Priority</th>
-                      <th className="text-right py-3 px-4 font-medium">Shares</th>
-                      <th className="text-right py-3 px-4 font-medium">Cost Basis</th>
-                      <th className="text-right py-3 px-4 font-medium">Current Value</th>
-                      <th className="text-right py-3 px-4 font-medium">Liq. Preference</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {positions.map((position, idx) => {
-                      const shareClass = position.share_class
-                      const positionKey = `${position.wallet}-${shareClass?.id || 0}`
-                      const preference = position.preference_amount ?? (
-                        shareClass
-                          ? position.cost_basis * shareClass.preference_multiple
-                          : position.cost_basis
-                      )
-                      const currentValue = position.current_value ?? position.cost_basis
-                      const isExpanded = expandedPositionKey === positionKey
-                      return (
-                        <Fragment key={positionKey}>
-                          <tr
-                            className="border-b hover:bg-muted/50 cursor-pointer"
-                            onClick={() => setExpandedPositionKey(isExpanded ? null : positionKey)}
-                          >
-                            <td className="py-3 px-4">
-                              <div className="flex items-center gap-1">
-                                {isExpanded ? (
-                                  <ChevronUp className="h-3 w-3 text-muted-foreground" />
-                                ) : (
-                                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                                )}
-                                <WalletAddress address={position.wallet} />
-                              </div>
-                            </td>
-                            <td className="py-3 px-4">
-                              <span className={`px-2 py-1 rounded text-xs ${
-                                shareClass?.priority === 0 ? 'bg-red-500/10 text-red-500' :
-                                (shareClass?.priority ?? 99) < 50 ? 'bg-purple-500/10 text-purple-500' :
-                                (shareClass?.priority ?? 99) < 70 ? 'bg-blue-500/10 text-blue-500' :
-                                (shareClass?.priority ?? 99) < 80 ? 'bg-green-500/10 text-green-500' :
-                                'bg-gray-500/10 text-gray-500'
-                              }`}>
-                                {shareClass?.symbol || 'Unknown'}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <span className={`px-2 py-0.5 rounded text-xs ${
-                                (shareClass?.priority ?? 99) === 0 ? 'bg-red-500/10 text-red-500' :
-                                (shareClass?.priority ?? 99) < 50 ? 'bg-yellow-500/10 text-yellow-600' :
-                                'bg-gray-500/10 text-gray-500'
-                              }`}>
-                                {shareClass?.priority ?? 99}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-right font-medium">
-                              {position.shares.toLocaleString()}
-                            </td>
-                            <td className="py-3 px-4 text-right">
-                              <div>{formatDollars(position.cost_basis)}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {formatDollarsDetailed(position.shares > 0 ? Math.round(position.cost_basis / position.shares) : 0)}/share
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 text-right">
-                              <div>{formatDollars(currentValue)}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {formatDollarsDetailed(position.shares > 0 ? Math.round(currentValue / position.shares) : 0)}/share
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 text-right">
-                              <div>{formatDollars(preference)}</div>
-                              <span className="text-xs text-muted-foreground">
-                                ({shareClass?.preference_multiple || 1}x)
-                              </span>
-                            </td>
-                          </tr>
-                          {/* Expanded row with details */}
-                          {isExpanded && (
-                            <tr className="bg-muted/30">
-                              <td colSpan={7} className="py-3 px-4">
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                                  <div>
-                                    <span className="text-muted-foreground">Full Wallet:</span>
-                                    <p className="font-mono text-xs break-all">{position.wallet}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Share Class:</span>
-                                    <p className="font-medium">{shareClass?.name || 'Unknown'} ({shareClass?.symbol || '?'})</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Price Per Share:</span>
-                                    <p className="font-medium">{formatDollarsDetailed(position.price_per_share)}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Preference Multiple:</span>
-                                    <p className="font-medium">{shareClass?.preference_multiple || 1}x</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Ownership:</span>
-                                    <p className="font-medium">
-                                      {totalShares > 0 ? ((position.shares / totalShares) * 100).toFixed(2) : 0}%
-                                    </p>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {/* Share Positions Table */}
+        <SharePositions
+          tokenId={selectedToken.tokenId}
+          positions={positions}
+          shareClasses={shareClasses}
+          loading={loading}
+          onRefresh={fetchData}
+          totalShares={totalShares}
+        />
         </div>
       )}
 
