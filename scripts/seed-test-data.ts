@@ -8,9 +8,12 @@
  * 3. Issues shares (mints tokens) to approved wallets
  * 4. Creates share classes in the database
  * 5. Records all transactions with ACTUAL blockchain slots
- * 6. Creates vesting schedules
- * 7. Issues dividends
- * 8. Performs corporate actions (stock split)
+ * 6. Creates convertible instruments (SAFEs)
+ * 7. Creates funding rounds and converts SAFEs
+ * 8. Creates vesting schedules with minute-by-minute releases
+ * 9. Issues dividends with individual payment transactions
+ * 10. Creates revaluation rounds
+ * 11. Performs corporate actions (stock split)
  *
  * IMPORTANT: All slots recorded in the database are the actual confirmed
  * blockchain slots from the transactions, ensuring historical reconstruction
@@ -53,7 +56,7 @@ const tokenIdl = JSON.parse(
 );
 
 // API URL for database operations
-const API_URL = process.env.API_URL || "http://localhost:8001";
+const API_URL = process.env.API_URL || "http://localhost:8000";
 
 // Test wallets - generate deterministic keypairs for testing
 function generateTestWallet(seed: string): Keypair {
@@ -655,177 +658,440 @@ async function main() {
   }
 
   // ========================================
-  // STEP 8: Create Vesting Schedules
+  // STEP 8: Create Convertible Instruments (SAFEs)
   // ========================================
-  console.log("\n--- Step 8: Create Vesting Schedules ---");
+  console.log("\n--- Step 8: Create Convertible Instruments (SAFEs) ---");
 
-  // Create vesting schedules for employees
+  // Define SAFE investors (these will convert during the Series A)
+  const SAFE_INVESTORS = [
+    {
+      name: "Seed SAFE Round 1 - Angel Investor 1",
+      wallet: generateTestWallet("angel-safe-inv-001"),
+      principal: 250_000_00, // $250,000 in cents
+      valuationCap: 10_000_000_00, // $10M cap
+      discountRate: 0.20, // 20% discount
+      safeType: "post_money",
+    },
+    {
+      name: "Seed SAFE Round 1 - Angel Investor 2",
+      wallet: generateTestWallet("angel-safe-inv-002"),
+      principal: 150_000_00, // $150,000 in cents
+      valuationCap: 10_000_000_00, // $10M cap
+      discountRate: 0.20, // 20% discount
+      safeType: "post_money",
+    },
+  ];
+
+  const safeIds: Record<string, number> = {};
+
+  for (const safe of SAFE_INVESTORS) {
+    try {
+      const response = await fetch(`${API_URL}/api/v1/tokens/${tokenId}/convertibles/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instrument_type: "safe",
+          name: safe.name,
+          holder_wallet: safe.wallet.publicKey.toString(),
+          holder_name: safe.name.split(" - ")[1] || safe.name,
+          principal_amount: safe.principal,
+          valuation_cap: safe.valuationCap,
+          discount_rate: safe.discountRate,
+          safe_type: safe.safeType,
+          notes: `${safe.safeType} SAFE with ${(safe.discountRate * 100).toFixed(0)}% discount and $${(safe.valuationCap / 100).toLocaleString()} cap`,
+        }),
+      });
+      if (response.ok) {
+        const created = await response.json();
+        safeIds[safe.name] = created.id;
+        console.log(`Created SAFE: ${safe.name} (ID: ${created.id}) - $${(safe.principal / 100).toLocaleString()}`);
+      } else {
+        const errorText = await response.text();
+        console.error(`Failed to create SAFE: ${response.status} ${errorText}`);
+      }
+    } catch (e) {
+      console.error(`Error creating SAFE ${safe.name}:`, e);
+    }
+  }
+
+  // ========================================
+  // STEP 9: Create Series A Funding Round and Convert SAFEs
+  // ========================================
+  console.log("\n--- Step 9: Create Series A Funding Round ---");
+
+  // Create Series A share class
+  let seriesAClassId: number | null = null;
+  try {
+    const response = await fetch(`${API_URL}/api/v1/tokens/${tokenId}/share-classes/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Series A Preferred",
+        symbol: "SER-A",
+        priority: 1,
+        preference_multiple: 1.0,
+        participation_cap: null,
+        anti_dilution: "broad_based_weighted_average",
+        conversion_ratio: 1.0,
+      }),
+    });
+    if (response.ok) {
+      const created = await response.json();
+      seriesAClassId = created.id;
+      console.log(`Created Series A share class (ID: ${seriesAClassId})`);
+    } else {
+      // Try to find existing
+      const existing = await fetch(`${API_URL}/api/v1/tokens/${tokenId}/share-classes/`);
+      if (existing.ok) {
+        const classes = await existing.json();
+        const found = classes.find((c: any) => c.symbol === "SER-A");
+        if (found) {
+          seriesAClassId = found.id;
+          console.log(`Found existing Series A share class (ID: ${seriesAClassId})`);
+        }
+      }
+    }
+  } catch (e) {
+    console.error(`Error creating Series A share class:`, e);
+  }
+
+  // Create Series A funding round
+  let seriesARoundId: number | null = null;
+  if (seriesAClassId) {
+    try {
+      const response = await fetch(`${API_URL}/api/v1/tokens/${tokenId}/funding-rounds/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Series A",
+          round_type: "series_a",
+          pre_money_valuation: 20_000_000_00, // $20M pre-money
+          share_class_id: seriesAClassId,
+          notes: "Series A round with SAFE conversions",
+        }),
+      });
+      if (response.ok) {
+        const created = await response.json();
+        seriesARoundId = created.id;
+        console.log(`Created Series A funding round (ID: ${seriesARoundId}) - $20M pre-money`);
+        console.log(`  Price per share: $${(created.price_per_share / 100).toFixed(4)}`);
+      } else {
+        const errorText = await response.text();
+        console.error(`Failed to create funding round: ${response.status} ${errorText}`);
+      }
+    } catch (e) {
+      console.error(`Error creating funding round:`, e);
+    }
+  }
+
+  // Add a Series A investor
+  if (seriesARoundId) {
+    const seriesAInvestor = {
+      name: "Venture Capital Fund Alpha",
+      wallet: generateTestWallet("vc-fund-alpha-001"),
+      amount: 5_000_000_00, // $5M investment
+    };
+
+    try {
+      const response = await fetch(`${API_URL}/api/v1/tokens/${tokenId}/funding-rounds/${seriesARoundId}/investments/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          investor_wallet: seriesAInvestor.wallet.publicKey.toString(),
+          investor_name: seriesAInvestor.name,
+          amount: seriesAInvestor.amount,
+        }),
+      });
+      if (response.ok) {
+        const created = await response.json();
+        console.log(`Added investment: ${seriesAInvestor.name} - $${(seriesAInvestor.amount / 100).toLocaleString()} → ${created.shares_received.toLocaleString()} shares`);
+      }
+    } catch (e) {
+      console.error(`Error adding investment:`, e);
+    }
+
+    // Convert SAFEs at this round
+    console.log("\nConverting SAFEs at Series A...");
+    for (const safe of SAFE_INVESTORS) {
+      const safeId = safeIds[safe.name];
+      if (safeId && seriesARoundId) {
+        try {
+          const response = await fetch(`${API_URL}/api/v1/tokens/${tokenId}/convertibles/${safeId}/convert/`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              funding_round_id: seriesARoundId,
+            }),
+          });
+          if (response.ok) {
+            const result = await response.json();
+            console.log(`Converted SAFE: ${safe.name}`);
+            console.log(`  Principal: $${(safe.principal / 100).toLocaleString()} → ${result.shares_received?.toLocaleString() || 'N/A'} shares`);
+            console.log(`  Conversion price: $${((result.conversion_price || 0) / 100).toFixed(4)}/share`);
+          } else {
+            const errorText = await response.text();
+            console.error(`Failed to convert SAFE: ${response.status} ${errorText}`);
+          }
+        } catch (e) {
+          console.error(`Error converting SAFE:`, e);
+        }
+      }
+    }
+
+    // Close the funding round
+    console.log("\nClosing Series A round...");
+    try {
+      const response = await fetch(`${API_URL}/api/v1/tokens/${tokenId}/funding-rounds/${seriesARoundId}/close/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (response.ok) {
+        const result = await response.json();
+        console.log(`Series A round closed!`);
+        console.log(`  Post-money valuation: $${(result.post_money_valuation / 100).toLocaleString()}`);
+        console.log(`  Total shares issued: ${result.shares_issued.toLocaleString()}`);
+        console.log(`  Total raised: $${(result.amount_raised / 100).toLocaleString()}`);
+      } else {
+        const errorText = await response.text();
+        console.error(`Failed to close round: ${response.status} ${errorText}`);
+      }
+    } catch (e) {
+      console.error(`Error closing round:`, e);
+    }
+  }
+
+  // ========================================
+  // STEP 10: Create Vesting Schedules (30 min with minute releases)
+  // ========================================
+  console.log("\n--- Step 10: Create Vesting Schedules (30 min vesting) ---");
+
+  // Create a vesting schedule that vests over 30 minutes, releasing every minute
   const vestingSchedules = [
     {
       beneficiary: EMPLOYEES[0], // David
-      totalAmount: 200_000,
-      cliff: 365, // 1 year cliff
-      duration: 1460, // 4 years total
+      totalAmount: 30_000, // 30,000 shares (1000 per minute for 30 minutes)
+      durationMinutes: 30,
+      cliffMinutes: 0, // No cliff for demo
       scheduleId: 1,
     },
     {
       beneficiary: EMPLOYEES[1], // Eve
-      totalAmount: 150_000,
-      cliff: 365,
-      duration: 1460,
+      totalAmount: 15_000, // 15,000 shares (500 per minute for 30 minutes)
+      durationMinutes: 30,
+      cliffMinutes: 0,
       scheduleId: 2,
     },
   ];
 
-  // Get current slot for vesting creation
-  currentSlot = await provider.connection.getSlot("confirmed");
+  const vestingStartTime = Math.floor(Date.now() / 1000); // Unix timestamp
 
   for (const vs of vestingSchedules) {
-    const vestingSlot = currentSlot;
-    currentSlot += 1; // Increment for next operation
-
     try {
-      await fetch(`${API_URL}/api/v1/tokens/${tokenId}/transactions/`, {
+      // Call the vesting API which creates both the model record AND the transaction
+      const response = await fetch(`${API_URL}/api/v1/tokens/${tokenId}/vesting/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tx_type: "vesting_schedule_create",
-          slot: vestingSlot,
-          wallet: vs.beneficiary.wallet.publicKey.toString(),
-          amount: vs.totalAmount,
+          beneficiary: vs.beneficiary.wallet.publicKey.toString(),
+          total_amount: vs.totalAmount,
+          start_time: vestingStartTime,
+          cliff_seconds: vs.cliffMinutes * 60,
+          duration_seconds: vs.durationMinutes * 60, // 30 minutes in seconds
+          vesting_type: "linear",
+          revocable: false,
           share_class_id: shareClassIds["common"],
-          priority: 2,
-          preference_multiple: 1.0,
-          reference_id: vs.scheduleId,
-          reference_type: "vesting_schedule",
-          data: {
-            start_time: new Date().toISOString(),
-            duration_seconds: vs.duration * 24 * 60 * 60,
-            cliff_seconds: vs.cliff * 24 * 60 * 60,
-            vesting_type: "linear",
-          },
-          triggered_by: "admin",
-          notes: `Vesting schedule for ${vs.beneficiary.name}: ${vs.totalAmount.toLocaleString()} shares over ${vs.duration} days`,
+          cost_basis: 0, // Grant (no cost)
+          price_per_share: 0,
         }),
       });
-      console.log(`Created VESTING_SCHEDULE for ${vs.beneficiary.name}: ${vs.totalAmount.toLocaleString()} shares at slot ${vestingSlot}`);
+      if (response.ok) {
+        const created = await response.json();
+        console.log(`Created VESTING_SCHEDULE for ${vs.beneficiary.name}: ${vs.totalAmount.toLocaleString()} shares over ${vs.durationMinutes} min (ID: ${created.on_chain_address?.slice(0, 16)}...)`);
+      } else {
+        const errorText = await response.text();
+        console.error(`Failed to create vesting schedule: ${response.status} ${errorText}`);
+      }
     } catch (e) {
       console.error(`Error creating vesting schedule:`, e);
     }
   }
 
-  // Simulate some vesting releases (as if time has passed)
-  console.log("\nSimulating vesting releases...");
+  // Also record vesting release transactions for the activity feed
+  console.log("\nRecording vesting release transactions for activity feed...");
 
   await sleep(500);
   currentSlot = await provider.connection.getSlot("confirmed");
 
   for (const vs of vestingSchedules) {
-    const releaseAmount = Math.floor(vs.totalAmount * 0.25); // 25% released
+    const sharesPerMinute = Math.floor(vs.totalAmount / vs.durationMinutes);
 
-    try {
-      await fetch(`${API_URL}/api/v1/tokens/${tokenId}/transactions/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tx_type: "vesting_release",
-          slot: currentSlot,
-          wallet: vs.beneficiary.wallet.publicKey.toString(),
-          amount: releaseAmount,
-          share_class_id: shareClassIds["common"],
-          priority: 2,
-          preference_multiple: 1.0,
-          reference_id: vs.scheduleId,
-          reference_type: "vesting_schedule",
-          triggered_by: "system",
-          notes: `Vested ${releaseAmount.toLocaleString()} shares to ${vs.beneficiary.name}`,
-        }),
-      });
-      console.log(`Recorded VESTING_RELEASE for ${vs.beneficiary.name}: ${releaseAmount.toLocaleString()} shares at slot ${currentSlot}`);
-    } catch (e) {
-      console.error(`Error recording vesting release:`, e);
+    // Simulate 10 minutes of releases
+    for (let minute = 1; minute <= 10; minute++) {
+      const releaseAmount = sharesPerMinute;
+      const releaseTime = new Date(vestingStartTime * 1000 + minute * 60 * 1000);
+
+      try {
+        await fetch(`${API_URL}/api/v1/tokens/${tokenId}/transactions/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tx_type: "vesting_release",
+            slot: currentSlot,
+            wallet: vs.beneficiary.wallet.publicKey.toString(),
+            amount: releaseAmount,
+            share_class_id: shareClassIds["common"],
+            priority: 2,
+            preference_multiple: 1.0,
+            reference_id: vs.scheduleId,
+            reference_type: "vesting_schedule",
+            data: {
+              release_number: minute,
+              release_time: releaseTime.toISOString(),
+              cumulative_released: releaseAmount * minute,
+              remaining: vs.totalAmount - (releaseAmount * minute),
+            },
+            triggered_by: "system",
+            notes: `Minute ${minute} vesting release: ${releaseAmount.toLocaleString()} shares to ${vs.beneficiary.name}`,
+          }),
+        });
+        if (minute <= 3) {
+          console.log(`  Release ${minute}/30 for ${vs.beneficiary.name}: ${releaseAmount.toLocaleString()} shares (cumulative: ${(releaseAmount * minute).toLocaleString()})`);
+        } else if (minute === 4) {
+          console.log(`  ... (continuing releases 4-10)`);
+        }
+      } catch (e) {
+        console.error(`Error recording vesting release:`, e);
+      }
+
+      currentSlot += 1;
     }
-
-    currentSlot += 1;
+    console.log(`  Total vested for ${vs.beneficiary.name}: ${(sharesPerMinute * 10).toLocaleString()} of ${vs.totalAmount.toLocaleString()} shares`);
   }
 
   // ========================================
-  // STEP 9: Create Dividend Round
+  // STEP 11: Create Dividend Round with Individual Payments
   // ========================================
-  console.log("\n--- Step 9: Create Dividend Round ---");
+  console.log("\n--- Step 11: Create Dividend Round with Individual Payments ---");
 
   await sleep(500);
   currentSlot = await provider.connection.getSlot("confirmed");
 
-  const dividendRoundId = 1;
-  const totalDividend = 1_000_000_00; // $1M total dividend
+  const amountPerShare = 8; // 8 cents per share ($0.08)
 
+  // Use USDC mint address (this is the well-known devnet USDC address as a placeholder)
+  const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
+  // IMPORTANT: Get ACTUAL shareholders from reconstructed state (based on transactions)
+  // Don't use ALL_PARTICIPANTS - need actual shareholders from transaction history
+  let actualShareholders: { wallet: string; balance: number; name?: string }[] = [];
   try {
-    await fetch(`${API_URL}/api/v1/tokens/${tokenId}/transactions/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        tx_type: "dividend_round_create",
-        slot: currentSlot,
-        amount: totalDividend,
-        reference_id: dividendRoundId,
-        reference_type: "dividend_round",
-        data: {
-          record_date: new Date().toISOString(),
-          payment_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-          amount_per_share: 8, // 8 cents per share
-        },
-        triggered_by: "admin",
-        notes: `Dividend round: $${(totalDividend / 100).toLocaleString()} total`,
-      }),
-    });
-    console.log(`Created DIVIDEND_ROUND: $${(totalDividend / 100).toLocaleString()} at slot ${currentSlot}`);
+    // Use reconstructed state endpoint which is based on transactions (source of truth)
+    const stateResponse = await fetch(`${API_URL}/api/v1/tokens/${tokenId}/captable/state/${currentSlot}`);
+    if (stateResponse.ok) {
+      const state = await stateResponse.json();
+      // state.balances is an object: { wallet: balance }
+      actualShareholders = Object.entries(state.balances || {})
+        .filter(([_, balance]) => (balance as number) > 0)
+        .map(([wallet, balance]) => ({
+          wallet,
+          balance: balance as number,
+          name: wallet.slice(0, 8) + "..." + wallet.slice(-4),
+        }));
+      console.log(`\nFound ${actualShareholders.length} actual shareholders from reconstructed state`);
+    } else {
+      console.error(`Failed to fetch reconstructed state: ${stateResponse.status}`);
+    }
   } catch (e) {
-    console.error(`Error creating dividend round:`, e);
+    console.error(`Error fetching reconstructed state:`, e);
   }
 
-  // Record dividend payments to each shareholder
-  console.log("\nRecording dividend payments...");
+  if (actualShareholders.length === 0) {
+    console.log("No shareholders found - skipping dividend distribution");
+  } else {
+    // Calculate total shares from actual shareholders
+    const totalShares = actualShareholders.reduce((sum, s) => sum + s.balance, 0);
+    const totalDividend = totalShares * amountPerShare;
 
-  await sleep(500);
-  currentSlot = await provider.connection.getSlot("confirmed");
+    console.log(`\nDividend Details:`);
+    console.log(`  Amount per share: $${(amountPerShare / 100).toFixed(2)}`);
+    console.log(`  Total shares eligible: ${totalShares.toLocaleString()}`);
+    console.log(`  Total dividend pool: $${(totalDividend / 100).toLocaleString()}`);
 
-  const amountPerShare = 8; // 8 cents per share
-
-  for (const participant of ALL_PARTICIPANTS) {
-    const paymentAmount = participant.shares * amountPerShare;
-
+    let dividendRoundId: number | null = null;
     try {
-      await fetch(`${API_URL}/api/v1/tokens/${tokenId}/transactions/`, {
+      // Call the dividend API which creates the DividendRound model record
+      const response = await fetch(`${API_URL}/api/v1/tokens/${tokenId}/dividends/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tx_type: "dividend_payment",
-          slot: currentSlot,
-          wallet: participant.wallet.publicKey.toString(),
-          amount: paymentAmount,
-          reference_id: dividendRoundId,
-          reference_type: "dividend_round",
-          data: {
-            shares_held: participant.shares,
-            amount_per_share: amountPerShare,
-          },
-          triggered_by: "system",
-          notes: `Dividend payment to ${participant.name}: $${(paymentAmount / 100).toLocaleString()}`,
+          payment_token: USDC_MINT,
+          total_pool: totalDividend,
         }),
       });
-      console.log(`Recorded DIVIDEND_PAYMENT for ${participant.name}: $${(paymentAmount / 100).toLocaleString()} at slot ${currentSlot}`);
+      if (response.ok) {
+        const created = await response.json();
+        dividendRoundId = created.id;
+        console.log(`\nCreated DIVIDEND_ROUND #${created.round_number} (ID: ${dividendRoundId})`);
+        console.log(`  Status: ${created.status}`);
+        console.log(`  Total recipients: ${created.total_recipients}`);
+      } else {
+        const errorText = await response.text();
+        console.error(`Failed to create dividend round: ${response.status} ${errorText}`);
+      }
     } catch (e) {
-      console.error(`Error recording dividend payment:`, e);
+      console.error(`Error creating dividend round:`, e);
     }
 
-    currentSlot += 1;
+    // Record individual dividend payment transactions for the activity feed
+    // ONLY for actual shareholders from the cap table
+    console.log("\nRecording dividend payment transactions for activity feed...");
+
+    await sleep(500);
+    currentSlot = await provider.connection.getSlot("confirmed");
+
+    for (const shareholder of actualShareholders) {
+      const paymentAmount = shareholder.balance * amountPerShare;
+      const paymentSlot = currentSlot;
+
+      try {
+        await fetch(`${API_URL}/api/v1/tokens/${tokenId}/transactions/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tx_type: "dividend_payment",
+            slot: paymentSlot,
+            wallet_to: shareholder.wallet,
+            amount: paymentAmount,
+            reference_id: dividendRoundId || 1,
+            reference_type: "dividend_round",
+            data: {
+              round_number: 1,
+              shares: shareholder.balance,
+              dividend_per_share: amountPerShare / 100,  // Store as dollars for display
+              payment_token: "USDC",
+              payment_status: "completed",
+              payment_method: "direct_transfer",
+            },
+            tx_signature: `sim_div_${shareholder.wallet.slice(0, 8)}_${Date.now()}`,
+            triggered_by: "system",
+            notes: `Dividend payment: ${shareholder.balance.toLocaleString()} shares × $${(amountPerShare / 100).toFixed(2)} = $${(paymentAmount / 100).toLocaleString()}`,
+          }),
+        });
+        console.log(`  Payment to ${shareholder.name?.padEnd(20) || shareholder.wallet.slice(0, 16).padEnd(20)} ${shareholder.balance.toLocaleString().padStart(10)} shares → $${(paymentAmount / 100).toLocaleString().padStart(10)}`);
+      } catch (e) {
+        console.error(`Error recording dividend payment:`, e);
+      }
+
+      currentSlot += 1;
+    }
+
+    console.log(`\nDividend round complete: ${actualShareholders.length} payments totaling $${(totalDividend / 100).toLocaleString()}`);
   }
 
   // ========================================
-  // STEP 10: Record Transfer (bonus shares)
+  // STEP 12: Record Transfer (bonus shares)
   // ========================================
-  console.log("\n--- Step 10: Record Transfer ---");
+  console.log("\n--- Step 12: Record Transfer ---");
 
   await sleep(500);
   currentSlot = await provider.connection.getSlot("confirmed");
@@ -850,9 +1116,50 @@ async function main() {
   }
 
   // ========================================
-  // STEP 11: Record Stock Split (2:1)
+  // STEP 13: Create Revaluation Round (409A)
   // ========================================
-  console.log("\n--- Step 11: Record Stock Split ---");
+  console.log("\n--- Step 13: Create Revaluation Round (409A) ---");
+
+  // A revaluation round is a $0 funding round that just updates the company valuation
+  // This is typically done for 409A valuations or internal appraisals
+  if (seriesAClassId) {
+    try {
+      const response = await fetch(`${API_URL}/api/v1/tokens/${tokenId}/funding-rounds/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "409A Valuation - Q1 2025",
+          round_type: "revaluation",
+          pre_money_valuation: 35_000_000_00, // $35M valuation (up from $25M post-Series A)
+          share_class_id: seriesAClassId,
+          notes: "Annual 409A valuation by independent appraiser. Company value increased due to strong growth metrics.",
+        }),
+      });
+      if (response.ok) {
+        const created = await response.json();
+        console.log(`Created revaluation round (ID: ${created.id}) - $35M valuation`);
+
+        // Close the revaluation round immediately (no investments needed)
+        const closeResponse = await fetch(`${API_URL}/api/v1/tokens/${tokenId}/funding-rounds/${created.id}/close/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        if (closeResponse.ok) {
+          const result = await closeResponse.json();
+          console.log(`Revaluation round closed!`);
+          console.log(`  New valuation: $${(result.post_money_valuation / 100).toLocaleString()}`);
+          console.log(`  New price per share: $${(result.price_per_share / 100).toFixed(4)}`);
+        }
+      }
+    } catch (e) {
+      console.error(`Error creating revaluation round:`, e);
+    }
+  }
+
+  // ========================================
+  // STEP 14: Record Stock Split (2:1)
+  // ========================================
+  console.log("\n--- Step 14: Record Stock Split ---");
 
   await sleep(500);
   currentSlot = await provider.connection.getSlot("confirmed");
@@ -866,7 +1173,7 @@ async function main() {
         slot: currentSlot,
         data: { numerator: 2, denominator: 1 },
         triggered_by: "admin",
-        notes: "2:1 stock split",
+        notes: "2:1 stock split - doubling all shareholder positions",
       }),
     });
     console.log(`Recorded STOCK_SPLIT: 2:1 at slot ${currentSlot}`);
@@ -879,27 +1186,44 @@ async function main() {
   // ========================================
   const finalSlot = await provider.connection.getSlot("confirmed");
 
-  console.log("\n=== Seed Complete ===\n");
+  console.log("\n" + "=".repeat(60));
+  console.log("=== Seed Complete ===");
+  console.log("=".repeat(60) + "\n");
+
   console.log("Summary:");
   console.log(`  Token: ${SYMBOL} (ID: ${tokenId})`);
-  console.log(`  Share Classes: ${Object.keys(shareClassIds).length}`);
+  console.log(`  Share Classes: ${Object.keys(shareClassIds).length + (seriesAClassId ? 1 : 0)}`);
   console.log(`  Participants: ${ALL_PARTICIPANTS.length}`);
-  console.log(`  Vesting Schedules: ${vestingSchedules.length}`);
-  console.log(`  Dividend Rounds: 1`);
+  console.log(`  SAFEs Created: ${SAFE_INVESTORS.length}`);
+  console.log(`  Funding Rounds: ${seriesARoundId ? 2 : 0} (Series A + Revaluation)`);
+  console.log(`  Vesting Schedules: ${vestingSchedules.length} (30-min vesting with minute releases)`);
+  console.log(`  Dividend Rounds: 1 (with ${ALL_PARTICIPANTS.length} individual payments)`);
+
   console.log(`\nSlot Range:`);
   if (confirmedTransactions.length > 0) {
     console.log(`  First transaction: slot ${confirmedTransactions[0].slot}`);
     console.log(`  Last operation: slot ${finalSlot}`);
   }
   console.log(`  Current blockchain slot: ${finalSlot}`);
-  console.log(`\nTo test historical snapshots:`);
+
+  console.log(`\nTo test the features:`);
   console.log(`  1. Open the UI and select ${SYMBOL} token`);
-  console.log(`  2. Use the slot selector to view state at different points`);
-  console.log(`\nKey events to check:`);
-  console.log(`  - Before stock split: ~12.175M shares`);
-  console.log(`  - After stock split: ~24.35M shares`);
-  console.log(`  - Vesting schedules created for David and Eve`);
-  console.log(`  - Dividend payments to all shareholders`);
+  console.log(`  2. Go to Investments page to see:`);
+  console.log(`     - Series A funding round with SAFE conversions`);
+  console.log(`     - 409A Revaluation round (no new shares, just valuation update)`);
+  console.log(`     - Converted SAFEs in funding round history`);
+  console.log(`  3. Go to Cap Table to see all shareholders including SAFE converts`);
+  console.log(`  4. Check Activity Feed for:`);
+  console.log(`     - SAFE conversion transactions`);
+  console.log(`     - Investment transactions`);
+  console.log(`     - Minute-by-minute vesting releases`);
+  console.log(`     - Individual dividend payment transactions`);
+
+  console.log(`\nKey data points:`);
+  console.log(`  - SAFEs converted at Series A with discount/cap mechanics`);
+  console.log(`  - Vesting: 30-min schedules with 10 recorded minute releases each`);
+  console.log(`  - Dividends: $0.08/share with individual payment records`);
+  console.log(`  - Revaluation: $35M (up from $25M post-Series A)`);
 }
 
 main().catch((err) => {
