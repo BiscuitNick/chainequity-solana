@@ -27,8 +27,8 @@ services:
     container_name: chainequity-api
     environment:
       DATABASE_URL: postgresql+asyncpg://chainequity:chainequity@postgres:5432/chainequity
-      SOLANA_CLUSTER: devnet
-      SOLANA_RPC_URL: https://api.devnet.solana.com
+      SOLANA_CLUSTER: localnet
+      SOLANA_RPC_URL: http://host.docker.internal:8899
       API_HOST: 0.0.0.0
       API_PORT: 8000
     ports:

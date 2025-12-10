@@ -183,18 +183,58 @@ export default function DashboardPage() {
           activities.sort((a, b) => (b.slot || 0) - (a.slot || 0))
           setAllActivity(activities)
         } else {
-          // Live data - use current cap table and unified transactions
-          const [capTableData, proposalsData, transferStatsData, issuanceStatsData, transactions] = await Promise.all([
-            api.getCapTable(selectedToken.tokenId),
-            api.getProposals(selectedToken.tokenId, 'active').catch(() => []),
-            api.getTransferStats(selectedToken.tokenId).catch(() => null),
-            api.getIssuanceStats(selectedToken.tokenId).catch(() => null),
+          // Live data - use transaction-based state reconstruction for consistency
+          // Get current slot first, then reconstruct state at that slot
+          const [currentSlotResponse, transactions, proposalsData] = await Promise.all([
+            api.getCurrentSlot().catch(() => ({ slot: 0 })),
             api.getUnifiedTransactions(selectedToken.tokenId, 100).catch(() => []),
+            api.getProposals(selectedToken.tokenId, 'active').catch(() => []),
           ])
-          setCapTable(capTableData)
+
+          const currentSlot = currentSlotResponse.slot || 0
+
+          // Reconstruct state at current slot (includes all transactions up to now)
+          let state: ReconstructedState | null = null
+          if (currentSlot > 0) {
+            state = await api.getReconstructedStateAtSlot(selectedToken.tokenId, currentSlot).catch((err) => {
+              console.error('Failed to reconstruct live state:', err)
+              return null
+            })
+          }
+
+          if (state) {
+            setReconstructedState(state)
+            // Convert reconstructed state to CapTableResponse format for display
+            const holders = Object.entries(state.balances)
+              .filter(([_, balance]) => balance > 0)
+              .map(([wallet, balance]) => ({
+                wallet,
+                balance,
+                ownership_pct: state.total_supply > 0 ? (balance / state.total_supply) * 100 : 0,
+                vested: 0,
+                unvested: 0,
+                status: state.approved_wallets.includes(wallet) ? 'active' : 'pending',
+              }))
+              .sort((a, b) => b.balance - a.balance)
+
+            const capTableFromState: CapTableResponse = {
+              slot: state.slot,
+              timestamp: new Date().toISOString(),
+              total_supply: state.total_supply,
+              holder_count: state.holder_count,
+              holders,
+            }
+            setCapTable(capTableFromState)
+          } else {
+            // Fallback to API cap table if reconstruction fails
+            const capTableData = await api.getCapTable(selectedToken.tokenId).catch(() => null)
+            setCapTable(capTableData)
+          }
+
           setProposals(proposalsData)
-          setTransferStats(transferStatsData)
-          setIssuanceStats(issuanceStatsData)
+          // Clear transfer/issuance stats since we're using transactions
+          setTransferStats(null)
+          setIssuanceStats(null)
 
           // Convert unified transactions to activity feed
           const activities: Activity[] = transactions.map(convertTransactionToActivity)

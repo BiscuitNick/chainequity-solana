@@ -156,7 +156,10 @@ async def get_share_class_positions(
     Get all positions in a share class.
 
     Returns all wallets that hold shares in this class, ordered by share count.
+    Uses transaction-based state reconstruction for consistency.
     """
+    from app.services.solana_client import get_solana_client
+
     # Get share class with token
     result = await db.execute(
         select(ShareClass)
@@ -170,28 +173,33 @@ async def get_share_class_positions(
     if not share_class:
         raise HTTPException(status_code=404, detail="Share class not found")
 
-    # Get positions
-    result = await db.execute(
-        select(SharePosition)
-        .where(SharePosition.share_class_id == share_class_id)
-        .order_by(SharePosition.shares.desc())
-    )
-    positions = result.scalars().all()
+    # Get current slot and reconstruct state from transactions
+    solana_client = await get_solana_client()
+    current_slot = await solana_client.get_slot()
+
+    tx_service = TransactionService(db)
+    state = await tx_service.reconstruct_at_slot(token_id, current_slot)
 
     current_price = share_class.token.current_price_per_share or 0
 
-    return [
-        SharePositionResponse(
-            wallet=p.wallet,
-            share_class=_build_share_class_response(share_class),
-            shares=p.shares,
-            cost_basis=p.cost_basis,
-            price_per_share=p.price_per_share,
-            current_value=p.shares * current_price,
-            preference_amount=int(p.cost_basis * share_class.preference_multiple),
-        )
-        for p in positions
-    ]
+    # Build positions from reconstructed state
+    positions = []
+    for (wallet, class_id), pos_state in state.positions.items():
+        if class_id == share_class_id and pos_state.shares > 0:
+            positions.append(SharePositionResponse(
+                wallet=wallet,
+                share_class=_build_share_class_response(share_class),
+                shares=pos_state.shares,
+                cost_basis=pos_state.cost_basis,
+                price_per_share=pos_state.cost_basis // pos_state.shares if pos_state.shares > 0 else 0,
+                current_value=pos_state.shares * current_price,
+                preference_amount=int(pos_state.cost_basis * share_class.preference_multiple),
+            ))
+
+    # Sort by shares descending
+    positions.sort(key=lambda p: p.shares, reverse=True)
+
+    return positions
 
 
 @router.put("/{share_class_id}", response_model=ShareClassResponse)

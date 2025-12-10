@@ -34,25 +34,38 @@ router = APIRouter()
 
 
 async def _get_waterfall_positions(token_id: int, db: AsyncSession) -> List[WaterfallPosition]:
-    """Get all share positions formatted for waterfall calculation"""
-    result = await db.execute(
-        select(SharePosition)
-        .options(selectinload(SharePosition.share_class))
-        .where(SharePosition.token_id == token_id)
-    )
-    positions = result.scalars().all()
+    """Get all share positions formatted for waterfall calculation using transaction reconstruction"""
+    from app.services.solana_client import get_solana_client
+    from app.services.transaction_service import TransactionService
 
-    return [
-        WaterfallPosition(
-            wallet=p.wallet,
-            share_class_name=p.share_class.name,
-            priority=p.share_class.priority,
-            shares=p.shares,
-            cost_basis=p.cost_basis,
-            preference_multiple=p.share_class.preference_multiple,
-        )
-        for p in positions
-    ]
+    # Get current slot and reconstruct state from transactions
+    solana_client = await get_solana_client()
+    current_slot = await solana_client.get_slot()
+
+    tx_service = TransactionService(db)
+    state = await tx_service.reconstruct_at_slot(token_id, current_slot)
+
+    # Get share class info for names
+    result = await db.execute(
+        select(ShareClass).where(ShareClass.token_id == token_id)
+    )
+    share_classes = {sc.id: sc for sc in result.scalars().all()}
+
+    positions = []
+    for (wallet, class_id), pos_state in state.positions.items():
+        if pos_state.shares > 0:
+            sc = share_classes.get(class_id)
+            if sc:
+                positions.append(WaterfallPosition(
+                    wallet=wallet,
+                    share_class_name=sc.name,
+                    priority=pos_state.priority,
+                    shares=pos_state.shares,
+                    cost_basis=pos_state.cost_basis,
+                    preference_multiple=pos_state.preference_multiple,
+                ))
+
+    return positions
 
 
 def _build_waterfall_response(result) -> WaterfallResponse:

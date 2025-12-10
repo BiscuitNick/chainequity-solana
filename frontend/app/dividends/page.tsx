@@ -66,6 +66,20 @@ export default function DividendsPage() {
   const fetchMintedShares = async () => {
     if (!selectedToken) return
     try {
+      // Use transaction-based reconstruction for consistency
+      const currentSlotResponse = await api.getCurrentSlot().catch(() => ({ slot: 0 }))
+      const currentSlot = currentSlotResponse.slot || 0
+
+      if (currentSlot > 0) {
+        const state = await api.getReconstructedStateAtSlot(selectedToken.tokenId, currentSlot).catch(() => null)
+        if (state) {
+          setMintedShares(state.total_supply || 0)
+          setHolderCount(state.holder_count || 0)
+          return
+        }
+      }
+
+      // Fallback to cap table API
       const capTable = await api.getCapTable(selectedToken.tokenId)
       setMintedShares(capTable.total_supply || 0)
       setHolderCount(capTable.holder_count || 0)

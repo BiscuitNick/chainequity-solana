@@ -53,9 +53,47 @@ export default function CapTablePage() {
         }
         setCapTable(capTableFromState)
       } else {
-        // Live data - use current cap table
-        const data = await api.getCapTable(selectedToken.tokenId)
-        setCapTable(data)
+        // Live data - use transaction-based state reconstruction for consistency
+        const currentSlotResponse = await api.getCurrentSlot().catch(() => ({ slot: 0 }))
+        const currentSlot = currentSlotResponse.slot || 0
+
+        if (currentSlot > 0) {
+          // Reconstruct state at current slot
+          const state = await api.getReconstructedStateAtSlot(selectedToken.tokenId, currentSlot).catch(() => null)
+          if (state) {
+            setReconstructedState(state)
+
+            // Build holders from reconstructed state balances
+            const holders = Object.entries(state.balances)
+              .filter(([_, balance]) => balance > 0)
+              .map(([wallet, balance]) => ({
+                wallet,
+                balance,
+                ownership_pct: state.total_supply > 0 ? (balance / state.total_supply) * 100 : 0,
+                vested: 0,
+                unvested: 0,
+                status: state.approved_wallets.includes(wallet) ? 'active' : 'pending',
+              }))
+              .sort((a, b) => b.balance - a.balance)
+
+            const capTableFromState: CapTableResponse = {
+              slot: state.slot,
+              timestamp: new Date().toISOString(),
+              total_supply: state.total_supply,
+              holder_count: holders.length,
+              holders,
+            }
+            setCapTable(capTableFromState)
+          } else {
+            // Fallback to API cap table if reconstruction fails
+            const data = await api.getCapTable(selectedToken.tokenId)
+            setCapTable(data)
+          }
+        } else {
+          // Fallback to API cap table if no slot available
+          const data = await api.getCapTable(selectedToken.tokenId)
+          setCapTable(data)
+        }
       }
     } catch (e: any) {
       console.error('Failed to fetch cap table:', e)

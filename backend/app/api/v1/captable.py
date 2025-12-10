@@ -409,48 +409,29 @@ async def get_enhanced_captable(
     share_classes = result.scalars().all()
     share_class_map = {sc.id: sc for sc in share_classes}
 
-    # Determine if we need historical reconstruction
+    # Use transaction-based reconstruction for both live and historical views
+    # This ensures consistency when blockchain state may be empty but transactions exist
     target_slot = slot if slot is not None else current_slot
     is_historical = slot is not None
 
-    if is_historical:
-        # Reconstruct state from unified transactions
-        tx_service = TransactionService(db)
-        state = await tx_service.reconstruct_at_slot(token_id, target_slot)
+    # Reconstruct state from unified transactions
+    tx_service = TransactionService(db)
+    state = await tx_service.reconstruct_at_slot(token_id, target_slot)
 
-        # Build positions from reconstructed state
-        positions_data = []
-        for (wallet, class_id), pos_state in state.positions.items():
-            if pos_state.shares > 0:
-                positions_data.append({
-                    'wallet': wallet,
-                    'share_class_id': class_id,
-                    'shares': pos_state.shares,
-                    'cost_basis': pos_state.cost_basis,
-                    'priority': pos_state.priority,
-                    'preference_multiple': pos_state.preference_multiple,
-                })
+    # Build positions from reconstructed state
+    positions_data = []
+    for (wallet, class_id), pos_state in state.positions.items():
+        if pos_state.shares > 0:
+            positions_data.append({
+                'wallet': wallet,
+                'share_class_id': class_id,
+                'shares': pos_state.shares,
+                'cost_basis': pos_state.cost_basis,
+                'priority': pos_state.priority,
+                'preference_multiple': pos_state.preference_multiple,
+            })
 
-        total_shares = state.total_supply
-    else:
-        # Get all share positions from database (current state)
-        result = await db.execute(
-            select(SharePosition)
-            .where(SharePosition.token_id == token_id)
-            .where(SharePosition.shares > 0)
-        )
-        positions = result.scalars().all()
-
-        positions_data = [{
-            'wallet': p.wallet,
-            'share_class_id': p.share_class_id,
-            'shares': p.shares,
-            'cost_basis': p.cost_basis,
-            'priority': share_class_map.get(p.share_class_id, type('obj', (object,), {'priority': 99})).priority,
-            'preference_multiple': share_class_map.get(p.share_class_id, type('obj', (object,), {'preference_multiple': 1.0})).preference_multiple,
-        } for p in positions]
-
-        total_shares = sum(p['shares'] for p in positions_data)
+    total_shares = state.total_supply
 
     # Calculate totals
     total_cost_basis = sum(p['cost_basis'] for p in positions_data)
