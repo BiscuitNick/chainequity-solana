@@ -3,6 +3,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import factory, tokens, allowlist, captable, vesting, dividends, governance, admin, sync, issuance, transfers
 from app.api.v1 import share_classes, funding_rounds, convertibles, valuations, simulator
+from app.api.v1 import transactions
 
 api_router = APIRouter()
 
@@ -28,6 +29,7 @@ tokens_router.include_router(funding_rounds.router, prefix="/{token_id}/funding-
 tokens_router.include_router(convertibles.router, prefix="/{token_id}/convertibles", tags=["Convertibles"])
 tokens_router.include_router(valuations.router, prefix="/{token_id}/valuations", tags=["Valuations"])
 tokens_router.include_router(simulator.router, prefix="/{token_id}/simulator", tags=["Simulator"])
+tokens_router.include_router(transactions.router, prefix="/{token_id}/transactions", tags=["Transactions"])
 
 # Include all top-level routers
 api_router.include_router(factory.router, prefix="/factory", tags=["Factory"])
