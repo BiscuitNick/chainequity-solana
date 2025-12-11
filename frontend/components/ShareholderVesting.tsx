@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Fragment, useMemo } from 'react'
+import { useState, useEffect, Fragment, useMemo, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { RefreshCw, ChevronDown, ChevronUp, Copy, Check, History, Clock, Calendar } from 'lucide-react'
 import { WalletAddress } from '@/components/WalletAddress'
@@ -67,12 +67,40 @@ export function ShareholderVesting({
   const [loadingTransactions, setLoadingTransactions] = useState<Set<string>>(new Set())
   const [copiedSlot, setCopiedSlot] = useState<number | null>(null)
 
-  // Clear cached transactions when the selected slot changes
-  // This ensures we re-fetch transactions filtered by the new slot
-  useMemo(() => {
+  // Fetch transactions for a wallet - wrapped in useCallback since it's used in useEffect
+  const fetchWalletTransactions = useCallback(async (wallet: string, slotFilter?: number | null) => {
+    setLoadingTransactions(prev => new Set(prev).add(wallet))
+    try {
+      // Pass slotFilter as maxSlot to filter transactions to only those at or before the selected slot
+      const transactions = await api.getUnifiedTransactions(tokenId, 100, slotFilter ?? undefined, 'vesting_release', wallet)
+      setWalletTransactions(prev => ({
+        ...prev,
+        [wallet]: transactions,
+      }))
+    } catch (e) {
+      console.error('Failed to fetch wallet transactions:', e)
+    } finally {
+      setLoadingTransactions(prev => {
+        const next = new Set(prev)
+        next.delete(wallet)
+        return next
+      })
+    }
+  }, [tokenId])
+
+  // When selected slot changes, clear cached transactions and re-fetch for all wallets
+  // This ensures historical view shows correct data immediately
+  useEffect(() => {
     setWalletTransactions({})
-    setExpandedRows(new Set())
-  }, [selectedSlot])
+
+    // In historical view, auto-fetch transactions for all wallets to show correct vested/released amounts
+    if (selectedSlot && schedules.length > 0) {
+      const uniqueWallets = [...new Set(schedules.map(s => s.beneficiary))]
+      uniqueWallets.forEach(wallet => {
+        fetchWalletTransactions(wallet, selectedSlot)
+      })
+    }
+  }, [selectedSlot, schedules, fetchWalletTransactions])
 
   // Group schedules by wallet
   const vestingByWallet: VestingByWallet[] = schedules.reduce((acc: VestingByWallet[], schedule) => {
@@ -106,31 +134,11 @@ export function ShareholderVesting({
         next.add(wallet)
         // Fetch vesting release transactions for this wallet if not already loaded
         if (!walletTransactions[wallet]) {
-          fetchWalletTransactions(wallet)
+          fetchWalletTransactions(wallet, selectedSlot)
         }
       }
       return next
     })
-  }
-
-  const fetchWalletTransactions = async (wallet: string) => {
-    setLoadingTransactions(prev => new Set(prev).add(wallet))
-    try {
-      // Pass selectedSlot as maxSlot to filter transactions to only those at or before the selected slot
-      const transactions = await api.getUnifiedTransactions(tokenId, 100, selectedSlot ?? undefined, 'vesting_release', wallet)
-      setWalletTransactions(prev => ({
-        ...prev,
-        [wallet]: transactions,
-      }))
-    } catch (e) {
-      console.error('Failed to fetch wallet transactions:', e)
-    } finally {
-      setLoadingTransactions(prev => {
-        const next = new Set(prev)
-        next.delete(wallet)
-        return next
-      })
-    }
   }
 
   const copySlotToClipboard = (slot: number) => {
@@ -260,8 +268,16 @@ export function ShareholderVesting({
                     ? computeReleasedFromTransactions(transactions)
                     : scheduleReleasedAmount
 
-                  const unvestedAmount = totalAmount - vestedAmount
-                  const vestedPercent = totalAmount > 0 ? (vestedAmount / totalAmount) * 100 : 0
+                  // For historical view (selectedSlot), vested amount equals released amount
+                  // since vested tokens are immediately released in interval-based vesting.
+                  // For live view, use the schedule's vested_amount.
+                  const historicalVestedAmount = transactions.length > 0
+                    ? computeReleasedFromTransactions(transactions)
+                    : vestedAmount
+                  const displayVestedAmount = selectedSlot ? historicalVestedAmount : vestedAmount
+
+                  const unvestedAmount = totalAmount - displayVestedAmount
+                  const vestedPercent = totalAmount > 0 ? (displayVestedAmount / totalAmount) * 100 : 0
 
                   // Separate current (active) and past (completed/terminated) schedules
                   // Use vested_amount for completion check (more reliable than released_amount)
@@ -288,7 +304,7 @@ export function ShareholderVesting({
                           {totalAmount.toLocaleString()}
                         </td>
                         <td className="py-3 px-4 text-right text-blue-500">
-                          {vestedAmount.toLocaleString()}
+                          {displayVestedAmount.toLocaleString()}
                         </td>
                         <td className="py-3 px-4 text-right text-green-500">
                           {releasedAmount.toLocaleString()}

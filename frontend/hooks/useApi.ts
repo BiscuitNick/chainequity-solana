@@ -48,6 +48,8 @@ function useApiCall<T>(
 // Token hooks
 export function useTokens() {
   const setTokens = useAppStore((state) => state.setTokens)
+  const selectedToken = useAppStore((state) => state.selectedToken)
+  const setSelectedToken = useAppStore((state) => state.setSelectedToken)
 
   const result = useApiCall(async () => {
     const tokens = await api.listTokens()
@@ -61,6 +63,15 @@ export function useTokens() {
       isPaused: t.is_paused,
     }))
     setTokens(appTokens)
+
+    // Validate persisted token still exists - clear if not found
+    if (selectedToken) {
+      const stillExists = appTokens.some(t => t.tokenId === selectedToken.tokenId)
+      if (!stillExists) {
+        setSelectedToken(null)
+      }
+    }
+
     return tokens
   }, [])
 

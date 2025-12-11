@@ -1,0 +1,290 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - link "CE ChainEquity" [ref=e5] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e7]: CE
+        - generic [ref=e8]: ChainEquity
+      - navigation [ref=e9]:
+        - link "Dashboard" [ref=e10] [cursor=pointer]:
+          - /url: /
+          - img [ref=e11]
+          - text: Dashboard
+        - link "Tokens" [ref=e17] [cursor=pointer]:
+          - /url: /tokens
+          - img [ref=e18]
+          - text: Tokens
+        - link "Share Issuance" [ref=e23] [cursor=pointer]:
+          - /url: /issuance
+          - img [ref=e24]
+          - text: Share Issuance
+        - link "Cap Table" [ref=e28] [cursor=pointer]:
+          - /url: /captable
+          - img [ref=e29]
+          - text: Cap Table
+        - link "Investments" [ref=e32] [cursor=pointer]:
+          - /url: /investments
+          - img [ref=e33]
+          - text: Investments
+        - link "Vesting" [ref=e37] [cursor=pointer]:
+          - /url: /vesting
+          - img [ref=e38]
+          - text: Vesting
+        - link "Dividends" [ref=e40] [cursor=pointer]:
+          - /url: /dividends
+          - img [ref=e41]
+          - text: Dividends
+        - link "Governance" [ref=e45] [cursor=pointer]:
+          - /url: /governance
+          - img [ref=e46]
+          - text: Governance
+        - link "Corporate Actions" [ref=e49] [cursor=pointer]:
+          - /url: /corporate-actions
+          - img [ref=e50]
+          - text: Corporate Actions
+        - link "Allowlist" [ref=e55] [cursor=pointer]:
+          - /url: /allowlist
+          - img [ref=e56]
+          - text: Allowlist
+        - link "Admin" [ref=e61] [cursor=pointer]:
+          - /url: /admin
+          - img [ref=e62]
+          - text: Admin
+    - generic [ref=e65]:
+      - banner [ref=e66]:
+        - generic [ref=e67]:
+          - generic [ref=e68]:
+            - generic [ref=e69]:
+              - generic [ref=e70]: "Token:"
+              - button "FRSH Freshly Inc" [active] [ref=e71] [cursor=pointer]:
+                - generic [ref=e72]: FRSH
+                - generic [ref=e73]: Freshly Inc
+                - img [ref=e74]
+            - generic [ref=e76]:
+              - img [ref=e77]
+              - 'button "Live #457" [ref=e80] [cursor=pointer]':
+                - generic [ref=e81]:
+                  - img [ref=e82]
+                  - generic [ref=e88]: Live
+                - generic [ref=e89]: "#457"
+                - img [ref=e90]
+          - button "Select Wallet" [ref=e94] [cursor=pointer]
+      - main [ref=e95]:
+        - generic [ref=e96]:
+          - generic [ref=e97]:
+            - generic [ref=e98]:
+              - heading "Share Issuance" [level=1] [ref=e99]
+              - paragraph [ref=e100]: Issue shares with different classes and preferences for FRSH
+            - button "Refresh" [ref=e101] [cursor=pointer]:
+              - img [ref=e102]
+              - text: Refresh
+          - generic [ref=e107]:
+            - generic [ref=e108]:
+              - heading "Share Classes" [level=3] [ref=e110]:
+                - img [ref=e111]
+                - text: Share Classes
+              - generic [ref=e115]:
+                - generic [ref=e116]: "5"
+                - paragraph [ref=e117]: configured classes
+            - generic [ref=e118]:
+              - heading "Total Shares" [level=3] [ref=e120]:
+                - img [ref=e121]
+                - text: Total Shares
+              - generic [ref=e126]:
+                - generic [ref=e127]: 10,625,000
+                - paragraph [ref=e128]: issued across all classes
+            - generic [ref=e129]:
+              - heading "Shareholders" [level=3] [ref=e131]:
+                - img [ref=e132]
+                - text: Shareholders
+              - generic [ref=e137]:
+                - generic [ref=e138]: "4"
+                - paragraph [ref=e139]: unique holders
+          - generic [ref=e140]:
+            - generic [ref=e141]:
+              - generic [ref=e142]:
+                - heading "Issue Shares" [level=3] [ref=e143]:
+                  - img [ref=e144]
+                  - text: Issue Shares
+                - paragraph [ref=e145]: Issue shares to a wallet with a specific share class
+              - generic [ref=e146]:
+                - generic [ref=e147]:
+                  - text: Share Class
+                  - combobox [ref=e148] [cursor=pointer]:
+                    - generic: Select a share class
+                    - img [ref=e149]
+                - generic [ref=e151]:
+                  - text: Recipient Wallet
+                  - combobox [ref=e152] [cursor=pointer]:
+                    - generic: Select an approved wallet
+                    - img [ref=e153]
+                  - paragraph [ref=e155]: 1 approved wallet available
+                - generic [ref=e156]:
+                  - generic [ref=e157]:
+                    - text: Number of Shares
+                    - spinbutton "Number of Shares" [ref=e158]
+                  - generic [ref=e159]:
+                    - text: Total Investment ($)
+                    - spinbutton "Total Investment ($)" [ref=e160]
+                    - paragraph [ref=e161]: Total amount paid. Leave at 0 for founder/employee grants.
+                - generic [ref=e162]:
+                  - text: Notes (optional)
+                  - textbox "Notes (optional)" [ref=e163]:
+                    - /placeholder: Founder grant, Series A investment, etc.
+                - button "Issue Shares" [disabled]:
+                  - img
+                  - text: Issue Shares
+            - generic [ref=e164]:
+              - generic [ref=e166]:
+                - generic [ref=e167]:
+                  - heading "Share Classes" [level=3] [ref=e168]:
+                    - img [ref=e169]
+                    - text: Share Classes
+                  - paragraph [ref=e173]: Configure share classes with liquidation preferences
+                - generic [ref=e174]:
+                  - button "Initialize Standard" [ref=e175] [cursor=pointer]:
+                    - img [ref=e176]
+                    - text: Initialize Standard
+                  - button "Custom" [ref=e180] [cursor=pointer]:
+                    - img [ref=e181]
+                    - text: Custom
+              - table [ref=e184]:
+                - rowgroup [ref=e185]:
+                  - row "Name Symbol Priority Pref" [ref=e186]:
+                    - columnheader "Name" [ref=e187]
+                    - columnheader "Symbol" [ref=e188]
+                    - columnheader "Priority" [ref=e189]
+                    - columnheader "Pref" [ref=e190]
+                    - columnheader [ref=e191]
+                - rowgroup [ref=e192]:
+                  - row "Common COM 9 1x" [ref=e193] [cursor=pointer]:
+                    - cell "Common" [ref=e194]
+                    - cell "COM" [ref=e195]
+                    - cell "9" [ref=e196]
+                    - cell "1x" [ref=e197]
+                    - cell [ref=e198]
+                  - row "Seed S1X 8 1x" [ref=e199] [cursor=pointer]:
+                    - cell "Seed" [ref=e200]
+                    - cell "S1X" [ref=e201]
+                    - cell "8" [ref=e202]
+                    - cell "1x" [ref=e203]
+                    - cell [ref=e204]
+                  - row "Series A A1X 7 1x" [ref=e205] [cursor=pointer]:
+                    - cell "Series A" [ref=e206]
+                    - cell "A1X" [ref=e207]
+                    - cell "7" [ref=e208]
+                    - cell "1x" [ref=e209]
+                    - cell [ref=e210]:
+                      - button "Delete share class" [ref=e211]:
+                        - img [ref=e212]
+                  - row "Series B B2X 6 2x" [ref=e215] [cursor=pointer]:
+                    - cell "Series B" [ref=e216]
+                    - cell "B2X" [ref=e217]
+                    - cell "6" [ref=e218]
+                    - cell "2x" [ref=e219]
+                    - cell [ref=e220]:
+                      - button "Delete share class" [ref=e221]:
+                        - img [ref=e222]
+                  - row "Series C C3X 5 3x" [ref=e225] [cursor=pointer]:
+                    - cell "Series C" [ref=e226]
+                    - cell "C3X" [ref=e227]
+                    - cell "5" [ref=e228]
+                    - cell "3x" [ref=e229]
+                    - cell [ref=e230]:
+                      - button "Delete share class" [ref=e231]:
+                        - img [ref=e232]
+          - generic [ref=e235]:
+            - generic [ref=e236]:
+              - heading "Share Positions" [level=3] [ref=e237]
+              - paragraph [ref=e238]: All shareholders and their positions across share classes
+            - table [ref=e241]:
+              - rowgroup [ref=e242]:
+                - row "Wallet Share Class Priority Shares Cost Basis Current Value Liq. Preference" [ref=e243]:
+                  - columnheader "Wallet" [ref=e244]
+                  - columnheader "Share Class" [ref=e245]
+                  - columnheader "Priority" [ref=e246]
+                  - columnheader "Shares" [ref=e247]
+                  - columnheader "Cost Basis" [ref=e248]
+                  - columnheader "Current Value" [ref=e249]
+                  - columnheader "Liq. Preference" [ref=e250]
+              - rowgroup [ref=e251]:
+                - row "HqyWz6pU...6Bdz S1X 8 625,000 $250,000.00 $0.40/share $0.00 $0.00/share $250,000.00 (1x)" [ref=e252]:
+                  - cell "HqyWz6pU...6Bdz" [ref=e253]:
+                    - generic [ref=e254]:
+                      - generic [ref=e255]: HqyWz6pU...6Bdz
+                      - button "Copy wallet address" [ref=e256] [cursor=pointer]:
+                        - img [ref=e257]
+                  - cell "S1X" [ref=e260]
+                  - cell "8" [ref=e261]
+                  - cell "625,000" [ref=e262]
+                  - cell "$250,000.00 $0.40/share" [ref=e263]:
+                    - generic [ref=e264]: $250,000.00
+                    - generic [ref=e265]: $0.40/share
+                  - cell "$0.00 $0.00/share" [ref=e266]:
+                    - generic [ref=e267]: $0.00
+                    - generic [ref=e268]: $0.00/share
+                  - cell "$250,000.00 (1x)" [ref=e269]:
+                    - generic [ref=e270]: $250,000.00
+                    - generic [ref=e271]: (1x)
+                - row "5o7953wh...KGqA COM 9 5,000,000 $0.00 $0.00/share $0.00 $0.00/share $0.00 (1x)" [ref=e272]:
+                  - cell "5o7953wh...KGqA" [ref=e273]:
+                    - generic [ref=e274]:
+                      - generic [ref=e275]: 5o7953wh...KGqA
+                      - button "Copy wallet address" [ref=e276] [cursor=pointer]:
+                        - img [ref=e277]
+                  - cell "COM" [ref=e280]
+                  - cell "9" [ref=e281]
+                  - cell "5,000,000" [ref=e282]
+                  - cell "$0.00 $0.00/share" [ref=e283]:
+                    - generic [ref=e284]: $0.00
+                    - generic [ref=e285]: $0.00/share
+                  - cell "$0.00 $0.00/share" [ref=e286]:
+                    - generic [ref=e287]: $0.00
+                    - generic [ref=e288]: $0.00/share
+                  - cell "$0.00 (1x)" [ref=e289]:
+                    - generic [ref=e290]: $0.00
+                    - generic [ref=e291]: (1x)
+                - row "FndZBsAQ...2nTP COM 9 3,000,000 $0.00 $0.00/share $0.00 $0.00/share $0.00 (1x)" [ref=e292]:
+                  - cell "FndZBsAQ...2nTP" [ref=e293]:
+                    - generic [ref=e294]:
+                      - generic [ref=e295]: FndZBsAQ...2nTP
+                      - button "Copy wallet address" [ref=e296] [cursor=pointer]:
+                        - img [ref=e297]
+                  - cell "COM" [ref=e300]
+                  - cell "9" [ref=e301]
+                  - cell "3,000,000" [ref=e302]
+                  - cell "$0.00 $0.00/share" [ref=e303]:
+                    - generic [ref=e304]: $0.00
+                    - generic [ref=e305]: $0.00/share
+                  - cell "$0.00 $0.00/share" [ref=e306]:
+                    - generic [ref=e307]: $0.00
+                    - generic [ref=e308]: $0.00/share
+                  - cell "$0.00 (1x)" [ref=e309]:
+                    - generic [ref=e310]: $0.00
+                    - generic [ref=e311]: (1x)
+                - row "GXRDrRwJ...bFMi COM 9 2,000,000 $0.00 $0.00/share $0.00 $0.00/share $0.00 (1x)" [ref=e312]:
+                  - cell "GXRDrRwJ...bFMi" [ref=e313]:
+                    - generic [ref=e314]:
+                      - generic [ref=e315]: GXRDrRwJ...bFMi
+                      - button "Copy wallet address" [ref=e316] [cursor=pointer]:
+                        - img [ref=e317]
+                  - cell "COM" [ref=e320]
+                  - cell "9" [ref=e321]
+                  - cell "2,000,000" [ref=e322]
+                  - cell "$0.00 $0.00/share" [ref=e323]:
+                    - generic [ref=e324]: $0.00
+                    - generic [ref=e325]: $0.00/share
+                  - cell "$0.00 $0.00/share" [ref=e326]:
+                    - generic [ref=e327]: $0.00
+                    - generic [ref=e328]: $0.00/share
+                  - cell "$0.00 (1x)" [ref=e329]:
+                    - generic [ref=e330]: $0.00
+                    - generic [ref=e331]: (1x)
+  - generic [ref=e332]: PROTOTYPE ENVIRONMENT•Not for Real Financial Use•Solana Devnet Only
+  - button "Open Next.js Dev Tools" [ref=e338] [cursor=pointer]:
+    - img [ref=e339]
+  - alert [ref=e342]
+```
