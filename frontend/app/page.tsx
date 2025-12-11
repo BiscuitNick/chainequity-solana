@@ -334,9 +334,10 @@ export default function DashboardPage() {
     }
   }
 
-  // Format local time
+  // Format local time (backend returns UTC without Z suffix)
   const formatLocalTime = (timestamp: string) => {
-    return new Date(timestamp).toLocaleString(undefined, {
+    const utcTimestamp = timestamp.endsWith('Z') ? timestamp : timestamp + 'Z'
+    return new Date(utcTimestamp).toLocaleString(undefined, {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',

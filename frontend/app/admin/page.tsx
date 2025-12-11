@@ -9,6 +9,7 @@ import { api, MultiSigConfigResponse, PendingTransactionResponse } from '@/lib/a
 import { BulkImportAllowlistModal } from '@/components/BulkImportAllowlistModal'
 import { UpdateMultiSigThresholdModal } from '@/components/UpdateMultiSigThresholdModal'
 import { WalletAddress } from '@/components/WalletAddress'
+import { formatDate } from '@/lib/utils'
 
 export default function AdminPage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
@@ -207,8 +208,8 @@ export default function AdminPage() {
                         {JSON.stringify(tx.instruction_data).slice(0, 100)}...
                       </p>
                       <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                        <span>Created: {new Date(tx.created_at).toLocaleDateString()}</span>
-                        {tx.expires_at && <span className="text-yellow-500">Expires: {new Date(tx.expires_at).toLocaleDateString()}</span>}
+                        <span>Created: {formatDate(tx.created_at)}</span>
+                        {tx.expires_at && <span className="text-yellow-500">Expires: {formatDate(tx.expires_at)}</span>}
                       </div>
                     </div>
                     <div className="text-right">

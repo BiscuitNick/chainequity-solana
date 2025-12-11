@@ -12,10 +12,12 @@ import { StockSplitModal } from '@/components/StockSplitModal'
 import { ChangeSymbolModal } from '@/components/ChangeSymbolModal'
 
 // Helper to format dates nicely
+// Backend returns UTC times without 'Z' suffix, so we need to append it
 const formatDate = (dateStr: string | null | undefined) => {
   if (!dateStr) return '—'
   try {
-    const date = new Date(dateStr)
+    const utcDateStr = dateStr.endsWith('Z') ? dateStr : dateStr + 'Z'
+    const date = new Date(utcDateStr)
     return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
@@ -255,7 +257,7 @@ export default function CorporateActionsPage() {
                     <div>
                       <p className="font-medium">{getActionDescription(action)}</p>
                       <p className="text-xs text-muted-foreground">
-                        Executed on {new Date(action.executed_at).toLocaleString()} by {action.executed_by.slice(0, 4)}...{action.executed_by.slice(-4)}
+                        Executed on {formatDate(action.executed_at)} by {action.executed_by.slice(0, 4)}...{action.executed_by.slice(-4)}
                       </p>
                       {action.slot !== undefined && action.slot !== null && (
                         <p className="text-xs text-muted-foreground flex items-center gap-1">

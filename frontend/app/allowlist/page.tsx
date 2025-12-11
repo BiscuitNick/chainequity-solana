@@ -9,6 +9,7 @@ import { api, AllowlistEntry } from '@/lib/api'
 import { AddWalletModal } from '@/components/AddWalletModal'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { WalletAddress } from '@/components/WalletAddress'
+import { formatDate } from '@/lib/utils'
 
 export default function AllowlistPage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
@@ -250,7 +251,7 @@ export default function AllowlistPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-sm text-muted-foreground">
-                        {entry.added_at ? new Date(entry.added_at).toLocaleDateString() : '-'}
+                        {entry.added_at ? formatDate(entry.added_at) : '-'}
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex justify-end gap-1">

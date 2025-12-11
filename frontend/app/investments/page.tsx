@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useAppStore } from '@/stores/useAppStore'
+import { formatDate } from '@/lib/utils'
 import {
   DollarSign,
   PieChart,
@@ -857,7 +858,7 @@ export default function InvestmentsPage() {
                               )}
                               <div>
                                 <span className="text-muted-foreground">Created:</span>
-                                <p className="font-medium">{new Date(conv.created_at).toLocaleDateString()}</p>
+                                <p className="font-medium">{formatDate(conv.created_at)}</p>
                               </div>
                               {/* Conversion details if converted */}
                               {conv.status === 'converted' && (
@@ -868,7 +869,7 @@ export default function InvestmentsPage() {
                                   {conv.converted_at && (
                                     <div>
                                       <span className="text-muted-foreground">Converted On:</span>
-                                      <p className="font-medium">{new Date(conv.converted_at).toLocaleDateString()}</p>
+                                      <p className="font-medium">{formatDate(conv.converted_at)}</p>
                                     </div>
                                   )}
                                   {conv.shares_received && (

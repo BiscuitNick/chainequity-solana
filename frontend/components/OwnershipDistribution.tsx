@@ -8,6 +8,7 @@ import { WalletAddress } from '@/components/WalletAddress'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { api, UnifiedTransaction } from '@/lib/api'
 import { useAppStore } from '@/stores/useAppStore'
+import { formatDate } from '@/lib/utils'
 import {
   PieChart,
   Pie,
@@ -432,7 +433,7 @@ export function OwnershipDistribution({
                                                   : '—'}
                                               </td>
                                               <td className="py-2 px-2 text-muted-foreground text-xs">
-                                                {new Date(tx.created_at).toLocaleDateString()}
+                                                {formatDate(tx.created_at)}
                                               </td>
                                               <td className="py-2 px-2">
                                                 <div className="flex items-center gap-1">

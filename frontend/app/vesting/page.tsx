@@ -94,6 +94,12 @@ export default function VestingPage() {
     return `${days} days`
   }
 
+  // Parse UTC date string from backend (may not have 'Z' suffix)
+  const parseUTCDate = (dateStr: string) => {
+    const utcDateStr = dateStr.endsWith('Z') ? dateStr : dateStr + 'Z'
+    return new Date(utcDateStr)
+  }
+
   // Helper to format date/time based on duration scale
   const formatDateTime = (date: Date, isShortDuration: boolean) => {
     if (isShortDuration) {
@@ -104,14 +110,14 @@ export default function VestingPage() {
 
   // Helper to calculate cliff end date
   const getCliffEndDate = (schedule: VestingSchedule) => {
-    const startDate = new Date(schedule.start_time)
+    const startDate = parseUTCDate(schedule.start_time as unknown as string)
     return new Date(startDate.getTime() + schedule.cliff_duration * 1000)
   }
 
   // Calculate remaining time until fully vested
   const getRemainingTime = (schedule: VestingSchedule) => {
     const now = Date.now()
-    const startTime = new Date(schedule.start_time).getTime()
+    const startTime = parseUTCDate(schedule.start_time as unknown as string).getTime()
     const endTime = startTime + schedule.total_duration * 1000
 
     if (now >= endTime) return 'Fully vested'
@@ -262,7 +268,7 @@ export default function VestingPage() {
             <div className="space-y-4">
               {schedules.map((schedule) => {
                 const shortDuration = isShortDuration(schedule)
-                const startDate = new Date(schedule.start_time)
+                const startDate = parseUTCDate(schedule.start_time as unknown as string)
                 const cliffEndDate = getCliffEndDate(schedule)
                 const vestedPercent = (schedule.vested_amount / schedule.total_amount) * 100
 

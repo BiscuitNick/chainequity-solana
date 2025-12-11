@@ -7,6 +7,7 @@ import { WalletAddress } from '@/components/WalletAddress'
 import { api, VestingSchedule, UnifiedTransaction } from '@/lib/api'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAppStore } from '@/stores/useAppStore'
+import { parseUTCDate, formatDateTime as formatDateTimeUtil } from '@/lib/utils'
 
 // Helper to format duration in seconds to human readable
 const formatDuration = (seconds: number) => {
@@ -147,7 +148,7 @@ export function ShareholderVesting({
   // Calculate remaining time until fully vested
   const getRemainingTime = (schedule: VestingSchedule) => {
     const now = Date.now()
-    const startTime = new Date(schedule.start_time).getTime()
+    const startTime = parseUTCDate(schedule.start_time as unknown as string).getTime()
     const endTime = startTime + schedule.total_duration * 1000
 
     if (schedule.is_terminated) return 'Terminated'
@@ -188,8 +189,11 @@ export function ShareholderVesting({
   }
 
   // Format date/time based on duration scale
+  // Backend returns UTC times, ensure they're parsed as UTC then displayed in local time
   const formatDateTime = (dateStr: string, shortDuration: boolean) => {
-    const date = new Date(dateStr)
+    // Append 'Z' if not present to ensure UTC parsing
+    const utcDateStr = dateStr.endsWith('Z') ? dateStr : dateStr + 'Z'
+    const date = new Date(utcDateStr)
     if (shortDuration) {
       return date.toLocaleString()
     }
@@ -322,7 +326,7 @@ export function ShareholderVesting({
                                     {currentSchedules.map((schedule) => {
                                       const shortDuration = isShortDuration(schedule)
                                       const progress = getVestingProgress(schedule)
-                                      const startDate = new Date(schedule.start_time)
+                                      const startDate = parseUTCDate(schedule.start_time as unknown as string)
                                       const cliffEnd = new Date(startDate.getTime() + schedule.cliff_duration * 1000)
                                       const vestingEnd = new Date(startDate.getTime() + schedule.total_duration * 1000)
 
@@ -465,7 +469,7 @@ export function ShareholderVesting({
                                               +{(tx.amount || 0).toLocaleString()}
                                             </td>
                                             <td className="py-2 px-2 text-muted-foreground text-xs">
-                                              {new Date(tx.created_at).toLocaleString()}
+                                              {formatDateTimeUtil(tx.created_at)}
                                             </td>
                                             <td className="py-2 px-2">
                                               <div className="flex items-center gap-1">
