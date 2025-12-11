@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, BigInteger, Text
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, BigInteger, Text, Float
 from sqlalchemy.orm import relationship
 from app.models.database import Base
 
@@ -23,7 +23,7 @@ class ValuationEvent(Base):
 
     # Values (all in cents for precision)
     valuation = Column(BigInteger, nullable=False)  # Company valuation
-    price_per_share = Column(BigInteger, nullable=False)  # Derived: valuation / fully_diluted_shares
+    price_per_share = Column(Float, nullable=False)  # Derived: valuation / fully_diluted_shares (float for precision)
     fully_diluted_shares = Column(BigInteger, nullable=False)  # Total shares at time of valuation
 
     # Reference to funding round if applicable

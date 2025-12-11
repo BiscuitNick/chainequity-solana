@@ -67,7 +67,7 @@ class SharePositionResponse(BaseModel):
     share_class: ShareClassResponse
     shares: int
     cost_basis: int  # In cents
-    price_per_share: int  # In cents
+    price_per_share: float  # In cents (float for precision)
     current_value: int  # shares * current_price_per_share
     preference_amount: int  # cost_basis * preference_multiple
     slot: Optional[int] = None  # Solana slot at time of issuance
@@ -84,7 +84,7 @@ class IssueSharesRequest(BaseModel):
     share_class_id: int
     shares: int
     cost_basis: int = 0  # In cents - what the recipient paid (0 for founder grants)
-    price_per_share: int = 0  # In cents - price at time of issuance
+    price_per_share: float = 0  # In cents - price at time of issuance (float for precision)
     notes: Optional[str] = None
 
 
@@ -95,7 +95,7 @@ class IssueSharesResponse(BaseModel):
     share_class: ShareClassResponse
     shares: int
     cost_basis: int
-    price_per_share: int
+    price_per_share: float
     notes: Optional[str]
     created_at: datetime
 
@@ -106,7 +106,7 @@ class IssueSharesResponse(BaseModel):
 class BulkIssueSharesRequest(BaseModel):
     """Request to issue shares to multiple wallets"""
     share_class_id: int
-    price_per_share: int = 0  # In cents
+    price_per_share: float = 0  # In cents (float for precision)
     issuances: List[IssueSharesRequest]
 
 
@@ -120,8 +120,8 @@ class InvestmentResponse(BaseModel):
     investor_wallet: str
     investor_name: Optional[str]
     amount: int  # In cents
-    shares_received: int
-    price_per_share: int  # In cents
+    shares_received: float  # Supports fractional shares
+    price_per_share: float  # In cents (float for precision)
     status: str
     tx_signature: Optional[str]
     created_at: datetime
@@ -158,8 +158,8 @@ class FundingRoundResponse(BaseModel):
     pre_money_valuation: int  # In cents
     amount_raised: int  # In cents
     post_money_valuation: int  # In cents
-    price_per_share: int  # In cents
-    shares_issued: int
+    price_per_share: float  # In cents (float for precision)
+    shares_issued: float  # Supports fractional shares
     share_class: ShareClassResponse
     status: str
     closed_at: Optional[datetime]
@@ -207,7 +207,7 @@ class ConvertibleResponse(BaseModel):
     safe_type: Optional[str]
     status: str
     converted_at: Optional[datetime]
-    shares_received: Optional[int]
+    shares_received: Optional[float]  # Supports fractional shares
     conversion_price: Optional[int]
     created_at: datetime
 
@@ -236,7 +236,7 @@ class ValuationResponse(BaseModel):
     id: int
     event_type: str
     valuation: int  # In cents
-    price_per_share: int  # In cents
+    price_per_share: float  # In cents (float for precision)
     fully_diluted_shares: int
     funding_round_id: Optional[int]
     effective_date: datetime
@@ -321,9 +321,9 @@ class NewInvestorResponse(BaseModel):
     """New investor position from simulated round"""
     round_name: str
     amount_invested: int
-    shares_received: int
+    shares_received: float  # Supports fractional shares
     ownership_pct: float
-    price_per_share: int
+    price_per_share: float  # In cents (float for precision)
 
 
 class DilutionResponse(BaseModel):

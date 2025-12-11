@@ -59,7 +59,7 @@ class VestingScheduleResponse(BaseModel):
     share_class_id: Optional[int] = None
     share_class: Optional[ShareClassInfo] = None
     cost_basis: int = 0  # In cents
-    price_per_share: int = 0  # In cents
+    price_per_share: float = 0  # In cents (float for precision)
     preference_amount: int = 0  # Always 0 for vesting (common stock)
 
 
@@ -81,7 +81,7 @@ class CreateVestingRequest(BaseModel):
     revocable: bool = False
     # Cost basis tracking (optional)
     cost_basis: int = 0  # In cents - what was paid for these shares (0 for grants)
-    price_per_share: int = 0  # In cents - price at grant time
+    price_per_share: float = 0  # In cents - price at grant time (float for precision)
 
 
 class TerminateVestingRequest(BaseModel):

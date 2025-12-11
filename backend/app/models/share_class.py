@@ -16,7 +16,7 @@ class ShareGrant(Base):
     # Grant details
     shares = Column(BigInteger, nullable=False)
     cost_basis = Column(BigInteger, nullable=False, default=0)  # Amount paid for this grant
-    price_per_share = Column(BigInteger, nullable=False, default=0)
+    price_per_share = Column(Float, nullable=False, default=0)  # In cents (float for precision)
     notes = Column(Text, nullable=True)
 
     # Blockchain tracking
@@ -79,7 +79,7 @@ class SharePosition(Base):
     # Position details
     shares = Column(BigInteger, nullable=False, default=0)
     cost_basis = Column(BigInteger, nullable=False, default=0)  # Total amount paid (in cents)
-    price_per_share = Column(BigInteger, nullable=False, default=0)  # Price at acquisition (in cents)
+    price_per_share = Column(Float, nullable=False, default=0)  # In cents (float for precision)  # Price at acquisition (in cents)
 
     # Slot tracking for historical state
     slot = Column(BigInteger, nullable=True, index=True)  # Solana slot at time of creation/update

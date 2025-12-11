@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, BigInteger, Text, JSON
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, BigInteger, Text, JSON, Float
 from sqlalchemy.orm import relationship
 from app.models.database import Base
 
@@ -19,10 +19,10 @@ class FundingRound(Base):
     pre_money_valuation = Column(BigInteger, nullable=False)
     amount_raised = Column(BigInteger, nullable=False, default=0)
     post_money_valuation = Column(BigInteger, nullable=False)  # pre + raised
-    price_per_share = Column(BigInteger, nullable=False)  # In cents
+    price_per_share = Column(Float, nullable=False)  # In cents (float for precision)
 
-    # Shares issued
-    shares_issued = Column(BigInteger, nullable=False, default=0)
+    # Shares issued (supports fractional shares)
+    shares_issued = Column(Float, nullable=False, default=0)
     share_class_id = Column(Integer, ForeignKey("share_classes.id"), nullable=False)
 
     # Status
@@ -60,8 +60,8 @@ class Investment(Base):
 
     # Investment details (amounts in cents)
     amount = Column(BigInteger, nullable=False)
-    shares_received = Column(BigInteger, nullable=False)
-    price_per_share = Column(BigInteger, nullable=False)  # May differ from round if special terms
+    shares_received = Column(Float, nullable=False)  # Supports fractional shares
+    price_per_share = Column(Float, nullable=False)  # May differ from round if special terms (float for precision)
 
     # Status
     status = Column(String(20), nullable=False, default="pending")  # pending, completed, cancelled

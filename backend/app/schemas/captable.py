@@ -61,7 +61,7 @@ class EnhancedCapTableEntry(BaseModel):
     ownership_pct: float  # Percentage of total shares
     class_ownership_pct: float  # Percentage within share class
     unrealized_gain: int  # current_value - cost_basis
-    price_per_share: int  # Current price per share in cents
+    price_per_share: float  # Current price per share in cents (float for precision)
     preference_amount: int  # Liquidation preference (cost_basis * preference_multiple)
 
 
@@ -72,7 +72,7 @@ class EnhancedCapTableResponse(BaseModel):
 
     # Valuation info
     current_valuation: int  # In cents
-    price_per_share: int  # In cents
+    price_per_share: float  # In cents (float for precision)
     last_valuation_date: Optional[datetime] = None
 
     # Share statistics
@@ -104,7 +104,7 @@ class EnhancedCapTableByWalletResponse(BaseModel):
     slot: int
     timestamp: datetime
     current_valuation: int
-    price_per_share: int
+    price_per_share: float  # In cents (float for precision)
     total_shares: int
     holder_count: int
     wallets: List[WalletSummary]

@@ -8,6 +8,31 @@ import { api, SharePosition, ShareClass, UnifiedTransaction } from '@/lib/api'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAppStore } from '@/stores/useAppStore'
 import { formatDate } from '@/lib/utils'
+import { ViewModeToggle, ViewMode } from '@/components/ui/view-mode-toggle'
+import {
+  PieChart as RechartsPieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+} from 'recharts'
+
+const CHART_COLORS = [
+  'hsl(221, 83%, 53%)',   // blue
+  'hsl(142, 71%, 45%)',   // green
+  'hsl(262, 83%, 58%)',   // purple
+  'hsl(24, 94%, 50%)',    // orange
+  'hsl(346, 77%, 49%)',   // red
+  'hsl(187, 85%, 43%)',   // cyan
+  'hsl(45, 93%, 47%)',    // yellow
+  'hsl(280, 65%, 60%)',   // violet
+  'hsl(160, 60%, 45%)',   // teal
+  'hsl(330, 75%, 55%)',   // pink
+]
 
 // Helper to format cents as whole dollars (rounded)
 const formatDollarsRounded = (cents: number) => {
@@ -17,6 +42,16 @@ const formatDollarsRounded = (cents: number) => {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(Math.round(cents / 100))
+}
+
+// Helper to format cents as dollars with 2 decimal places
+const formatDollarsDetailed = (cents: number) => {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100)
 }
 
 // Transaction types that affect share positions
@@ -50,10 +85,41 @@ export function SharePositions({
   const setSelectedSlot = useAppStore((state) => state.setSelectedSlot)
   // Calculate total shares from positions if not provided
   const totalShares = propTotalShares ?? positions.reduce((sum, p) => sum + p.shares, 0)
+  const [viewMode, setViewMode] = useState<ViewMode>('table')
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [walletTransactions, setWalletTransactions] = useState<Record<string, UnifiedTransaction[]>>({})
   const [loadingTransactions, setLoadingTransactions] = useState<Set<string>>(new Set())
   const [copiedSlot, setCopiedSlot] = useState<number | null>(null)
+
+  // Aggregate positions by wallet for chart views
+  const aggregatedByWallet = useMemo(() => {
+    const walletMap = new Map<string, { wallet: string; shares: number; cost_basis: number; current_value: number }>()
+    positions.forEach((p) => {
+      const existing = walletMap.get(p.wallet)
+      const currentValue = p.current_value ?? p.cost_basis
+      if (existing) {
+        existing.shares += p.shares
+        existing.cost_basis += p.cost_basis
+        existing.current_value += currentValue
+      } else {
+        walletMap.set(p.wallet, {
+          wallet: p.wallet,
+          shares: p.shares,
+          cost_basis: p.cost_basis,
+          current_value: currentValue,
+        })
+      }
+    })
+    return Array.from(walletMap.values())
+      .sort((a, b) => b.shares - a.shares)
+      .map((item, idx) => ({
+        ...item,
+        pct: totalShares > 0 ? (item.shares / totalShares) * 100 : 0,
+        color: CHART_COLORS[idx % CHART_COLORS.length],
+        // Truncate wallet for chart display
+        name: `${item.wallet.slice(0, 4)}...${item.wallet.slice(-4)}`,
+      }))
+  }, [positions, totalShares])
 
   // Clear cached transactions when the selected slot changes
   // This ensures we re-fetch transactions filtered by the new slot
@@ -61,6 +127,15 @@ export function SharePositions({
     setWalletTransactions({})
     setExpandedRows(new Set())
   }, [selectedSlot])
+
+  // Create a wallet-to-color mapping for consistent colors in table view
+  const walletColorMap = useMemo(() => {
+    const map = new Map<string, string>()
+    aggregatedByWallet.forEach((item) => {
+      map.set(item.wallet, item.color)
+    })
+    return map
+  }, [aggregatedByWallet])
 
   const toggleRowExpanded = async (positionKey: string, wallet: string) => {
     setExpandedRows(prev => {
@@ -188,11 +263,113 @@ export function SharePositions({
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Share Positions</CardTitle>
-        <CardDescription>All shareholders and their positions across share classes</CardDescription>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+        <div>
+          <CardTitle>Share Positions</CardTitle>
+          <CardDescription>All shareholders and their positions across share classes</CardDescription>
+        </div>
+        <ViewModeToggle value={viewMode} onChange={setViewMode} />
       </CardHeader>
       <CardContent>
+        {viewMode === 'pie' ? (
+          <div className="flex flex-col md:flex-row items-center gap-6">
+            <div className="flex-shrink-0 w-[200px] h-[200px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <RechartsPieChart>
+                  <Pie
+                    data={aggregatedByWallet}
+                    dataKey="pct"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    strokeWidth={2}
+                    stroke="hsl(var(--background))"
+                  >
+                    {aggregatedByWallet.map((entry, idx) => (
+                      <Cell key={idx} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload || !payload.length) return null
+                      const data = payload[0].payload
+                      return (
+                        <div className="bg-popover border rounded-md shadow-md p-2 text-sm">
+                          <p className="font-medium font-mono text-xs">{data.wallet}</p>
+                          <p className="text-muted-foreground">
+                            {data.shares.toLocaleString()} shares ({data.pct.toFixed(2)}%)
+                          </p>
+                          <p className="text-muted-foreground">
+                            Value: {formatDollarsRounded(data.current_value)}
+                          </p>
+                        </div>
+                      )
+                    }}
+                  />
+                </RechartsPieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+              {aggregatedByWallet.map((item, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <div
+                    className="w-3 h-3 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: item.color }}
+                  />
+                  <span className="truncate font-mono text-xs">{item.name}</span>
+                  <span className="text-muted-foreground ml-auto">{item.pct.toFixed(1)}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : viewMode === 'bar' ? (
+          <div className="h-[250px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={aggregatedByWallet}
+                layout="vertical"
+                margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
+              >
+                <XAxis
+                  type="number"
+                  domain={[0, 'auto']}
+                  tickFormatter={(value) => `${value.toFixed(0)}%`}
+                  fontSize={12}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={90}
+                  fontSize={11}
+                  tickLine={false}
+                />
+                <RechartsTooltip
+                  content={({ active, payload }) => {
+                    if (!active || !payload || !payload.length) return null
+                    const data = payload[0].payload
+                    return (
+                      <div className="bg-popover border rounded-md shadow-md p-2 text-sm">
+                        <p className="font-medium font-mono text-xs">{data.wallet}</p>
+                        <p className="text-muted-foreground">
+                          {data.shares.toLocaleString()} shares ({data.pct.toFixed(2)}%)
+                        </p>
+                        <p className="text-muted-foreground">
+                          Value: {formatDollarsRounded(data.current_value)}
+                        </p>
+                      </div>
+                    )
+                  }}
+                />
+                <Bar dataKey="pct" radius={[0, 4, 4, 0]}>
+                  {aggregatedByWallet.map((entry, idx) => (
+                    <Cell key={idx} fill={entry.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
         <TooltipProvider>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -232,7 +409,11 @@ export function SharePositions({
                         onClick={() => toggleRowExpanded(positionKey, position.wallet)}
                       >
                         <td className="py-3 px-4">
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-3 h-3 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: walletColorMap.get(position.wallet) || CHART_COLORS[0] }}
+                            />
                             {isExpanded ? (
                               <ChevronUp className="h-4 w-4 text-muted-foreground" />
                             ) : (
@@ -260,7 +441,7 @@ export function SharePositions({
                           <div>{formatDollarsRounded(position.cost_basis)}</div>
                           <div className="text-xs text-muted-foreground">
                             {position.shares > 0
-                              ? formatDollarsRounded(position.cost_basis / position.shares) + '/share'
+                              ? formatDollarsDetailed(position.cost_basis / position.shares) + '/share'
                               : '—'}
                           </div>
                         </td>
@@ -268,7 +449,7 @@ export function SharePositions({
                           <div>{formatDollarsRounded(currentValue)}</div>
                           <div className="text-xs text-muted-foreground">
                             {position.shares > 0
-                              ? formatDollarsRounded(currentValue / position.shares) + '/share'
+                              ? formatDollarsDetailed(currentValue / position.shares) + '/share'
                               : '—'}
                           </div>
                         </td>
@@ -432,6 +613,7 @@ export function SharePositions({
             </table>
           </div>
         </TooltipProvider>
+        )}
       </CardContent>
     </Card>
   )

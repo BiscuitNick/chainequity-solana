@@ -142,11 +142,11 @@ async def create_funding_round(
     # Use at least 1 share to avoid division by zero
     fully_diluted_shares = max(fully_diluted_shares, 1)
 
-    # Calculate price per share
-    price_per_share = request.pre_money_valuation // fully_diluted_shares
+    # Calculate price per share (use float division to avoid rounding errors)
+    price_per_share = request.pre_money_valuation / fully_diluted_shares
 
     if price_per_share <= 0:
-        price_per_share = 1  # Minimum 1 cent
+        price_per_share = 0.01  # Minimum 0.01 cent
 
     funding_round = FundingRound(
         token_id=token_id,
@@ -269,8 +269,8 @@ async def add_investment(
     if not request.investor_wallet or len(request.investor_wallet) < 32:
         raise HTTPException(status_code=400, detail="Invalid wallet address")
 
-    # Calculate shares
-    shares_received = request.amount // funding_round.price_per_share
+    # Calculate shares (use regular division to support fractional shares)
+    shares_received = request.amount / funding_round.price_per_share
     if shares_received <= 0:
         raise HTTPException(
             status_code=400,
@@ -444,7 +444,7 @@ async def close_funding_round(
             total_shares = position.shares + investment.shares_received
             position.shares = total_shares
             position.cost_basis = total_cost
-            position.price_per_share = total_cost // total_shares if total_shares > 0 else 0
+            position.price_per_share = total_cost / total_shares if total_shares > 0 else 0
             position.updated_at = datetime.utcnow()
         else:
             # Create new position

@@ -54,6 +54,18 @@ import { WalletAddress } from '@/components/WalletAddress'
 import { ApprovedWalletSelector } from '@/components/ApprovedWalletSelector'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { SharePositions } from '@/components/SharePositions'
+import { ViewModeToggle, ViewMode } from '@/components/ui/view-mode-toggle'
+import {
+  PieChart as RechartsPieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+} from 'recharts'
 
 // Helper to format cents as dollars
 const formatDollars = (cents: number) => {
@@ -73,6 +85,32 @@ const formatDollarsDetailed = (cents: number) => {
     maximumFractionDigits: 2,
   }).format(cents / 100)
 }
+
+// Helper to format shares with fractional precision (up to 6 decimals for SPL tokens)
+const formatShares = (shares: number) => {
+  // If whole number, show without decimals
+  if (Number.isInteger(shares)) {
+    return shares.toLocaleString()
+  }
+  // Otherwise show up to 6 decimal places, trimming trailing zeros
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 6,
+  }).format(shares)
+}
+
+const CHART_COLORS = [
+  'hsl(221, 83%, 53%)',   // blue
+  'hsl(142, 71%, 45%)',   // green
+  'hsl(262, 83%, 58%)',   // purple
+  'hsl(24, 94%, 50%)',    // orange
+  'hsl(346, 77%, 49%)',   // red
+  'hsl(187, 85%, 43%)',   // cyan
+  'hsl(45, 93%, 47%)',    // yellow
+  'hsl(280, 65%, 60%)',   // violet
+  'hsl(160, 60%, 45%)',   // teal
+  'hsl(330, 75%, 55%)',   // pink
+]
 
 export default function InvestmentsPage() {
   const selectedToken = useAppStore((state) => state.selectedToken)
@@ -95,6 +133,7 @@ export default function InvestmentsPage() {
 
   // Simulator states
   const [activeTab, setActiveTab] = useState<'overview' | 'waterfall' | 'dilution'>('overview')
+  const [shareClassViewMode, setShareClassViewMode] = useState<ViewMode>('bar')
   const [exitAmount, setExitAmount] = useState<string>('10000000') // $10M default
   const [waterfallResult, setWaterfallResult] = useState<WaterfallResponse | null>(null)
   const [dilutionRounds, setDilutionRounds] = useState<SimulatedRoundInput[]>([])
@@ -532,7 +571,7 @@ export default function InvestmentsPage() {
       )}
 
       {/* Valuation Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -560,6 +599,21 @@ export default function InvestmentsPage() {
               {loading ? '...' : formatDollarsDetailed(pricePerShare)}
             </div>
             <p className="text-xs text-muted-foreground">current price</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <PieChart className="h-4 w-4" />
+              Total Shares
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {loading ? '...' : totalShares.toLocaleString()}
+            </div>
+            <p className="text-xs text-muted-foreground">shares outstanding</p>
           </CardContent>
         </Card>
 
@@ -617,51 +671,6 @@ export default function InvestmentsPage() {
       {activeTab === 'overview' && (
         <div className="space-y-6">
         <div className="grid gap-6 md:grid-cols-2">
-          {/* Share Classes */}
-          {(() => {
-            // Filter to only show share classes with issued shares
-            const shareClassesWithShares = shareClasses.filter((sc) => {
-              const summary = enhancedCapTable?.share_classes?.find((s) => s.id === sc.id)
-              return summary && summary.total_shares > 0
-            })
-            return (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Layers className="h-5 w-5" />
-                    Share Classes
-                  </CardTitle>
-                  <CardDescription>
-                    {shareClassesWithShares.length} share class{shareClassesWithShares.length !== 1 ? 'es' : ''} with issued shares
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {loading ? (
-                    <div className="flex justify-center py-8">
-                      <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : shareClassesWithShares.length === 0 ? (
-                    <p className="text-center text-muted-foreground py-8">No shares issued yet</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {shareClassesWithShares.map((sc) => (
-                        <div key={sc.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                          <div>
-                            <p className="font-medium">{sc.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              Priority {sc.priority} | {sc.preference_multiple}x preference
-                            </p>
-                          </div>
-                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )
-          })()}
-
           {/* Funding Rounds */}
           <Card>
             <CardHeader>
@@ -875,7 +884,7 @@ export default function InvestmentsPage() {
                                   {conv.shares_received && (
                                     <div>
                                       <span className="text-muted-foreground">Shares Received:</span>
-                                      <p className="font-medium text-green-600">{conv.shares_received.toLocaleString()}</p>
+                                      <p className="font-medium text-green-600">{formatShares(conv.shares_received)}</p>
                                     </div>
                                   )}
                                   {conv.conversion_price && (
@@ -897,18 +906,23 @@ export default function InvestmentsPage() {
             </CardContent>
           </Card>
 
-          {/* Cap Table Summary by Share Class */}
+          {/* Share Classes */}
           {(() => {
             // Filter to only show share classes with issued shares
-            const shareClassesWithShares = enhancedCapTable?.share_classes?.filter((sc) => sc.total_shares > 0) || []
+            const shareClassesWithShares = shareClasses.filter((sc) => {
+              const summary = enhancedCapTable?.share_classes?.find((s) => s.id === sc.id)
+              return summary && summary.total_shares > 0
+            })
             return (
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <PieChart className="h-5 w-5" />
-                    Share Class Distribution
+                    <Layers className="h-5 w-5" />
+                    Share Classes
                   </CardTitle>
-                  <CardDescription>Ownership by share class</CardDescription>
+                  <CardDescription>
+                    {shareClassesWithShares.length} share class{shareClassesWithShares.length !== 1 ? 'es' : ''} with issued shares
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   {loading ? (
@@ -918,27 +932,184 @@ export default function InvestmentsPage() {
                   ) : shareClassesWithShares.length === 0 ? (
                     <p className="text-center text-muted-foreground py-8">No shares issued yet</p>
                   ) : (
-                    <div className="space-y-4">
-                      {shareClassesWithShares.map((sc) => {
-                        const pct = totalShares > 0 ? (sc.total_shares / totalShares) * 100 : 0
-                        return (
-                          <div key={sc.id}>
-                            <div className="flex justify-between text-sm mb-1">
-                              <span className="font-medium">{sc.name}</span>
-                              <span>{pct.toFixed(1)}%</span>
-                            </div>
-                            <div className="w-full bg-muted rounded-full h-3">
-                              <div
-                                className="bg-primary h-3 rounded-full transition-all"
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {sc.total_shares.toLocaleString()} shares | {formatDollars(sc.total_value)}
+                    <div className="space-y-3">
+                      {shareClassesWithShares.map((sc) => (
+                        <div key={sc.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                          <div>
+                            <p className="font-medium">{sc.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Priority {sc.priority} | {sc.preference_multiple}x preference
                             </p>
                           </div>
-                        )
-                      })}
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          })()}
+
+          {/* Cap Table Summary by Share Class */}
+          {(() => {
+            // Filter to only show share classes with issued shares
+            const shareClassesWithShares = enhancedCapTable?.share_classes?.filter((sc) => sc.total_shares > 0) || []
+            const chartData = shareClassesWithShares.map((sc, idx) => ({
+              name: sc.name,
+              shares: sc.total_shares,
+              value: sc.total_value,
+              pct: totalShares > 0 ? (sc.total_shares / totalShares) * 100 : 0,
+              color: CHART_COLORS[idx % CHART_COLORS.length],
+            }))
+
+            return (
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <PieChart className="h-5 w-5" />
+                      Share Class Distribution
+                    </CardTitle>
+                    <CardDescription>Ownership by share class</CardDescription>
+                  </div>
+                  <ViewModeToggle value={shareClassViewMode} onChange={setShareClassViewMode} />
+                </CardHeader>
+                <CardContent>
+                  {loading ? (
+                    <div className="flex justify-center py-8">
+                      <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : shareClassesWithShares.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">No shares issued yet</p>
+                  ) : shareClassViewMode === 'table' ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left py-3 px-4 font-medium">Share Class</th>
+                            <th className="text-right py-3 px-4 font-medium">Shares</th>
+                            <th className="text-right py-3 px-4 font-medium">% Owned</th>
+                            <th className="text-right py-3 px-4 font-medium">Value</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {chartData.map((item, idx) => (
+                            <tr key={idx} className="border-b hover:bg-muted/50">
+                              <td className="py-3 px-4">
+                                <div className="flex items-center gap-2">
+                                  <div
+                                    className="w-3 h-3 rounded-full flex-shrink-0"
+                                    style={{ backgroundColor: item.color }}
+                                  />
+                                  <span className="font-medium">{item.name}</span>
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 text-right">{item.shares.toLocaleString()}</td>
+                              <td className="py-3 px-4 text-right">{item.pct.toFixed(2)}%</td>
+                              <td className="py-3 px-4 text-right font-medium">{formatDollars(item.value)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : shareClassViewMode === 'pie' ? (
+                    <div className="flex flex-col md:flex-row items-center gap-6">
+                      <div className="flex-shrink-0 w-[200px] h-[200px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <RechartsPieChart>
+                            <Pie
+                              data={chartData}
+                              dataKey="pct"
+                              nameKey="name"
+                              cx="50%"
+                              cy="50%"
+                              outerRadius={80}
+                              strokeWidth={2}
+                              stroke="hsl(var(--background))"
+                            >
+                              {chartData.map((entry, idx) => (
+                                <Cell key={idx} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <RechartsTooltip
+                              content={({ active, payload }) => {
+                                if (!active || !payload || !payload.length) return null
+                                const data = payload[0].payload
+                                return (
+                                  <div className="bg-popover border rounded-md shadow-md p-2 text-sm">
+                                    <p className="font-medium">{data.name}</p>
+                                    <p className="text-muted-foreground">
+                                      {data.shares.toLocaleString()} shares ({data.pct.toFixed(2)}%)
+                                    </p>
+                                    <p className="text-muted-foreground">
+                                      Value: {formatDollars(data.value)}
+                                    </p>
+                                  </div>
+                                )
+                              }}
+                            />
+                          </RechartsPieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                        {chartData.map((item, idx) => (
+                          <div key={idx} className="flex items-center gap-2">
+                            <div
+                              className="w-3 h-3 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: item.color }}
+                            />
+                            <span className="truncate">{item.name}</span>
+                            <span className="text-muted-foreground ml-auto">{item.pct.toFixed(1)}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="h-[200px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={chartData}
+                          layout="vertical"
+                          margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
+                        >
+                          <XAxis
+                            type="number"
+                            domain={[0, 'auto']}
+                            tickFormatter={(value) => `${value.toFixed(0)}%`}
+                            fontSize={12}
+                          />
+                          <YAxis
+                            type="category"
+                            dataKey="name"
+                            width={90}
+                            fontSize={11}
+                            tickLine={false}
+                          />
+                          <RechartsTooltip
+                            content={({ active, payload }) => {
+                              if (!active || !payload || !payload.length) return null
+                              const data = payload[0].payload
+                              return (
+                                <div className="bg-popover border rounded-md shadow-md p-2 text-sm">
+                                  <p className="font-medium">{data.name}</p>
+                                  <p className="text-muted-foreground">
+                                    {data.shares.toLocaleString()} shares ({data.pct.toFixed(2)}%)
+                                  </p>
+                                  <p className="text-muted-foreground">
+                                    Value: {formatDollars(data.value)}
+                                  </p>
+                                </div>
+                              )
+                            }}
+                          />
+                          <Bar dataKey="pct" radius={[0, 4, 4, 0]}>
+                            {chartData.map((entry, idx) => (
+                              <Cell key={idx} fill={entry.color} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
                     </div>
                   )}
                 </CardContent>
@@ -950,7 +1121,34 @@ export default function InvestmentsPage() {
         {/* Share Positions Table */}
         <SharePositions
           tokenId={selectedToken.tokenId}
-          positions={positions}
+          positions={
+            // Use historical positions from enhancedCapTable when viewing historical slot
+            isViewingHistorical && enhancedCapTable?.positions
+              ? enhancedCapTable.positions.map((p) => ({
+                  wallet: p.wallet,
+                  share_class_id: p.share_class_id,
+                  share_class: shareClasses.find((sc) => sc.id === p.share_class_id) || {
+                    id: p.share_class_id,
+                    token_id: selectedToken.tokenId,
+                    name: p.share_class_name,
+                    symbol: p.share_class_symbol,
+                    priority: 0,
+                    preference_multiple: 1,
+                    is_participating: false,
+                    participation_cap: 0,
+                    dividend_rate: 0,
+                    anti_dilution: 'none' as const,
+                    voting_rights_multiplier: 1,
+                    created_at: '',
+                  },
+                  shares: p.shares,
+                  cost_basis: p.cost_basis,
+                  price_per_share: p.price_per_share,
+                  current_value: p.current_value,
+                  preference_amount: p.preference_amount,
+                }))
+              : positions
+          }
           shareClasses={shareClasses}
           loading={loading}
           onRefresh={fetchData}
@@ -1287,7 +1485,7 @@ export default function InvestmentsPage() {
                               <tr key={idx} className="border-b hover:bg-muted/50">
                                 <td className="py-2 px-3">{investor.round_name}</td>
                                 <td className="py-2 px-3 text-right">{formatDollars(investor.amount_invested)}</td>
-                                <td className="py-2 px-3 text-right">{investor.shares_received.toLocaleString()}</td>
+                                <td className="py-2 px-3 text-right">{formatShares(investor.shares_received)}</td>
                                 <td className="py-2 px-3 text-right">{formatDollarsDetailed(investor.price_per_share)}</td>
                                 <td className="py-2 px-3 text-right">{investor.ownership_pct.toFixed(2)}%</td>
                                 <td className="py-2 px-3 text-right">{formatDollars(investor.amount_invested)}</td>
@@ -1628,7 +1826,7 @@ export default function InvestmentsPage() {
                             {inv.investor_name && <span className="text-sm">({inv.investor_name})</span>}
                           </div>
                           <p className="text-xs text-muted-foreground">
-                            {formatDollars(inv.amount)} → {inv.shares_received.toLocaleString()} shares
+                            {formatDollars(inv.amount)} → {formatShares(inv.shares_received)} shares
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -1738,7 +1936,7 @@ export default function InvestmentsPage() {
                             </p>
                             {effectivePrice > 0 && (
                               <p className="text-xs text-green-600 mt-1">
-                                Est. {estimatedShares.toLocaleString()} shares @ {formatDollarsDetailed(conversionPrice)}/share
+                                Est. {formatShares(estimatedShares)} shares @ {formatDollarsDetailed(conversionPrice)}/share
                               </p>
                             )}
                           </div>
