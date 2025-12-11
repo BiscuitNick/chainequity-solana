@@ -5,9 +5,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/useAppStore'
 import { Download, RefreshCw, AlertTriangle } from 'lucide-react'
-import { api, CapTableResponse, ReconstructedState, EnhancedCapTableResponse, EnhancedCapTableByWalletResponse } from '@/lib/api'
+import { api, CapTableResponse, ReconstructedState, EnhancedCapTableResponse, EnhancedCapTableByWalletResponse, VestingSchedule } from '@/lib/api'
 import { WalletAddress } from '@/components/WalletAddress'
 import { OwnershipDistribution } from '@/components/OwnershipDistribution'
+import { ShareholderVesting } from '@/components/ShareholderVesting'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
 export default function CapTablePage() {
@@ -18,6 +19,7 @@ export default function CapTablePage() {
   const [reconstructedState, setReconstructedState] = useState<ReconstructedState | null>(null)
   const [enhancedCapTable, setEnhancedCapTable] = useState<EnhancedCapTableResponse | null>(null)
   const [enhancedCapTableByWallet, setEnhancedCapTableByWallet] = useState<EnhancedCapTableByWalletResponse | null>(null)
+  const [vestingSchedules, setVestingSchedules] = useState<VestingSchedule[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -128,15 +130,19 @@ export default function CapTablePage() {
       }
       // Also fetch enhanced cap table for price info (for live data only)
       if (!isViewingHistorical) {
-        const [enhancedData, enhancedByWalletData] = await Promise.all([
+        const [enhancedData, enhancedByWalletData, vestingData] = await Promise.all([
           api.getEnhancedCapTable(selectedToken.tokenId).catch(() => null),
           api.getEnhancedCapTableByWallet(selectedToken.tokenId).catch(() => null),
+          api.getVestingSchedules(selectedToken.tokenId).catch(() => []),
         ])
         setEnhancedCapTable(enhancedData)
         setEnhancedCapTableByWallet(enhancedByWalletData)
+        setVestingSchedules(vestingData)
       } else {
         setEnhancedCapTable(null)
         setEnhancedCapTableByWallet(null)
+        // For historical view, don't set vesting schedules here - we'll derive them from reconstructed state
+        // The vesting schedules will be computed from reconstructedState.vesting_schedules in the render
       }
     } catch (e: any) {
       console.error('Failed to fetch cap table:', e)
@@ -189,6 +195,41 @@ export default function CapTablePage() {
       cost_basis: costBasisMap.get(holder.wallet),
     }))
   }, [holders, enhancedCapTableByWallet?.wallets])
+
+  // Convert reconstructed state vesting schedules to VestingSchedule format for historical view
+  const effectiveVestingSchedules = useMemo((): VestingSchedule[] => {
+    // For live view, use the fetched vesting schedules
+    if (!isViewingHistorical) {
+      return vestingSchedules
+    }
+    // For historical view, convert from reconstructed state
+    if (!reconstructedState?.vesting_schedules) {
+      return []
+    }
+    return reconstructedState.vesting_schedules.map(vs => ({
+      id: vs.schedule_id.toString(),
+      beneficiary: vs.beneficiary,
+      total_amount: vs.total_amount,
+      released_amount: vs.released_amount,
+      vested_amount: vs.released_amount, // In historical, vested = released for simplicity
+      start_time: '', // Not available in reconstructed state
+      cliff_duration: 0,
+      total_duration: 0,
+      // New interval-based fields
+      interval: 'minute' as const,
+      total_intervals: 1,
+      intervals_released: vs.released_amount > 0 ? 1 : 0,
+      amount_per_interval: vs.total_amount,
+      // Deprecated
+      vesting_type: 'linear',
+      revocable: false,
+      is_terminated: vs.is_terminated,
+      share_class_id: vs.share_class_id ?? undefined,
+      cost_basis: 0,
+      price_per_share: 0,
+      preference_amount: 0,
+    }))
+  }, [isViewingHistorical, vestingSchedules, reconstructedState?.vesting_schedules])
 
   if (!selectedToken) {
     return (
@@ -307,64 +348,15 @@ export default function CapTablePage() {
         tokenId={selectedToken?.tokenId}
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Shareholder Registry</CardTitle>
-          <CardDescription>Complete list of token holders</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex justify-center py-8">
-              <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : holders.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">No holders found</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-medium">Wallet</th>
-                    <th className="text-right py-3 px-4 font-medium">Balance</th>
-                    <th className="text-right py-3 px-4 font-medium">Ownership %</th>
-                    <th className="text-right py-3 px-4 font-medium">Vested</th>
-                    <th className="text-right py-3 px-4 font-medium">Unvested</th>
-                    <th className="text-right py-3 px-4 font-medium">% Vested</th>
-                    <th className="text-right py-3 px-4 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {holders.map((holder, idx) => {
-                    const totalVesting = holder.vested + holder.unvested
-                    const vestedPercent = totalVesting > 0 ? (holder.vested / totalVesting) * 100 : 0
-                    return (
-                    <tr key={idx} className="border-b hover:bg-muted/50">
-                      <td className="py-3 px-4">
-                        <WalletAddress address={holder.wallet} />
-                      </td>
-                      <td className="py-3 px-4 text-right font-medium">{holder.balance.toLocaleString()}</td>
-                      <td className="py-3 px-4 text-right">{holder.ownership_pct.toFixed(4)}%</td>
-                      <td className="py-3 px-4 text-right text-green-500">{holder.vested.toLocaleString()}</td>
-                      <td className="py-3 px-4 text-right text-yellow-500">{holder.unvested.toLocaleString()}</td>
-                      <td className="py-3 px-4 text-right">
-                        {totalVesting > 0 ? `${vestedPercent.toFixed(1)}%` : '—'}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className={`px-2 py-1 rounded text-xs ${
-                          holder.status === 'active' ? 'bg-green-500/10 text-green-500' : 'bg-gray-500/10 text-gray-500'
-                        }`}>
-                          {holder.status}
-                        </span>
-                      </td>
-                    </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Shareholder Vesting - show if there are vesting schedules (works for both live and historical) */}
+      {effectiveVestingSchedules.length > 0 && (
+        <ShareholderVesting
+          tokenId={selectedToken.tokenId}
+          schedules={effectiveVestingSchedules}
+          loading={loading}
+          onRefresh={fetchCapTable}
+        />
+      )}
     </div>
   )
 }

@@ -8,6 +8,7 @@ import { Plus, Calendar, Clock, AlertTriangle, RefreshCw, Check, X } from 'lucid
 import { api, VestingSchedule, TerminateVestingRequest } from '@/lib/api'
 import { CreateVestingScheduleModal } from '@/components/CreateVestingScheduleModal'
 import { WalletAddress } from '@/components/WalletAddress'
+import { ShareholderVesting } from '@/components/ShareholderVesting'
 
 type TerminationType = 'standard' | 'for_cause' | 'accelerated'
 
@@ -148,15 +149,15 @@ export default function VestingPage() {
     return schedule.total_duration < 86400
   }
 
-  // Format vesting type for display
-  const formatVestingType = (type: string) => {
+  // Format interval for display
+  const formatInterval = (interval: string) => {
     const labels: Record<string, string> = {
-      linear: 'Linear',
-      cliff_then_linear: 'Cliff + Linear',
-      stepped: 'Stepped',
-      continuous: 'Continuous',
+      minute: 'Minute',
+      hour: 'Hourly',
+      day: 'Daily',
+      month: 'Monthly',
     }
-    return labels[type] || type
+    return labels[interval] || interval
   }
 
   if (!selectedToken) {
@@ -254,10 +255,18 @@ export default function VestingPage() {
         </Card>
       </div>
 
+      {/* Shareholder Vesting Table */}
+      <ShareholderVesting
+        tokenId={selectedToken.tokenId}
+        schedules={schedules}
+        loading={loading}
+        onRefresh={fetchVestingSchedules}
+      />
+
       <Card>
         <CardHeader>
-          <CardTitle>Vesting Schedules</CardTitle>
-          <CardDescription>All token vesting schedules and their status</CardDescription>
+          <CardTitle>Vesting Schedule Management</CardTitle>
+          <CardDescription>Manage individual vesting schedules and actions</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -286,7 +295,10 @@ export default function VestingPage() {
                           {getStatus(schedule)}
                         </span>
                         <span className="px-2 py-0.5 bg-blue-500/10 text-blue-500 rounded text-xs">
-                          {formatVestingType(schedule.vesting_type)}
+                          {formatInterval(schedule.interval)}
+                        </span>
+                        <span className="px-2 py-0.5 bg-muted text-muted-foreground rounded text-xs">
+                          {schedule.intervals_released}/{schedule.total_intervals} intervals
                         </span>
                         {schedule.share_class && (
                           <span className="px-2 py-0.5 bg-purple-500/10 text-purple-500 rounded text-xs">

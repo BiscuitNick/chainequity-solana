@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { X, Calendar, Clock, AlertTriangle, Layers } from 'lucide-react'
-import { api, ShareClass } from '@/lib/api'
+import { X, Calendar, Clock, AlertTriangle } from 'lucide-react'
+import { api, VestingInterval } from '@/lib/api'
 import { ApprovedWalletSelector } from '@/components/ApprovedWalletSelector'
 
 interface CreateVestingScheduleModalProps {
@@ -15,22 +15,14 @@ interface CreateVestingScheduleModalProps {
   tokenSymbol: string
 }
 
-type VestingType = 'linear' | 'cliff_then_linear' | 'stepped' | 'continuous'
-
+// Maps time unit to VestingInterval for API
 type TimeUnit = 'minutes' | 'hours' | 'days' | 'months'
 
-const vestingTypeLabels: Record<VestingType, string> = {
-  continuous: 'Continuous',
-  linear: 'Linear',
-  cliff_then_linear: 'Cliff then Linear',
-  stepped: 'Stepped',
-}
-
-const vestingTypeDescriptions: Record<VestingType, string> = {
-  continuous: 'Tokens vest continuously every second over the duration',
-  linear: 'Tokens vest continuously over the duration',
-  cliff_then_linear: 'No vesting until cliff, then linear vesting after',
-  stepped: 'Tokens vest in periodic increments based on time unit',
+const timeUnitToInterval: Record<TimeUnit, VestingInterval> = {
+  minutes: 'minute',
+  hours: 'hour',
+  days: 'day',
+  months: 'month',
 }
 
 const timeUnitLabels: Record<TimeUnit, string> = {
@@ -67,7 +59,6 @@ export function CreateVestingScheduleModal({
 }: CreateVestingScheduleModalProps) {
   const [beneficiary, setBeneficiary] = useState('')
   const [totalAmount, setTotalAmount] = useState('')
-  const [vestingType, setVestingType] = useState<VestingType>('cliff_then_linear')
   const [timeUnit, setTimeUnit] = useState<TimeUnit>('months')
   const [cliffValue, setCliffValue] = useState('12')
   const [durationValue, setDurationValue] = useState('48')
@@ -85,31 +76,9 @@ export function CreateVestingScheduleModal({
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
-  // Share class state
-  const [shareClasses, setShareClasses] = useState<ShareClass[]>([])
-  const [selectedShareClassId, setSelectedShareClassId] = useState<number | null>(null)
+  // Cost basis tracking (vesting is always common stock)
   const [costBasis, setCostBasis] = useState('')
   const [pricePerShare, setPricePerShare] = useState('')
-  const [loadingShareClasses, setLoadingShareClasses] = useState(false)
-
-  // Fetch share classes when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      fetchShareClasses()
-    }
-  }, [isOpen, tokenId])
-
-  const fetchShareClasses = async () => {
-    setLoadingShareClasses(true)
-    try {
-      const classes = await api.getShareClasses(tokenId)
-      setShareClasses(classes)
-    } catch (err) {
-      console.error('Failed to fetch share classes:', err)
-    } finally {
-      setLoadingShareClasses(false)
-    }
-  }
 
   if (!isOpen) return null
 
@@ -169,8 +138,8 @@ export function CreateVestingScheduleModal({
       startTimestamp = Math.floor(new Date(startDate).getTime() / 1000)
     }
 
-    // Map continuous to linear (they're the same on-chain)
-    const onChainVestingType = vestingType === 'continuous' ? 'linear' : vestingType
+    // Get the interval based on time unit
+    const interval = timeUnitToInterval[timeUnit]
 
     setIsSubmitting(true)
 
@@ -185,9 +154,8 @@ export function CreateVestingScheduleModal({
         start_time: startTimestamp,
         cliff_seconds: cliffSeconds,
         duration_seconds: durationSeconds,
-        vesting_type: onChainVestingType,
+        interval,
         revocable,
-        share_class_id: selectedShareClassId || undefined,
         cost_basis: costBasisCents || undefined,
         price_per_share: pricePerShareCents || undefined,
       })
@@ -198,13 +166,11 @@ export function CreateVestingScheduleModal({
       setTimeout(() => {
         setBeneficiary('')
         setTotalAmount('')
-        setVestingType('cliff_then_linear')
         setTimeUnit('months')
         setCliffValue('12')
         setDurationValue('48')
         setStartNow(true)
         setRevocable(true)
-        setSelectedShareClassId(null)
         setCostBasis('')
         setPricePerShare('')
         setSuccess(null)
@@ -226,22 +192,17 @@ export function CreateVestingScheduleModal({
     }
   }
 
-  // Calculate vest rate for summary
+  // Calculate vest rate for summary (interval-based discrete vesting)
   const getVestRateText = () => {
     const amount = parseInt(totalAmount || '0')
     const duration = parseInt(durationValue || '1')
     if (amount <= 0 || duration <= 0) return null
 
-    const rate = Math.floor(amount / duration)
+    // Duration is the number of intervals (e.g., 8 minutes = 8 intervals)
+    const amountPerInterval = Math.floor(amount / duration)
     const unitSingular = timeUnit.slice(0, -1)
 
-    if (vestingType === 'continuous' || vestingType === 'linear') {
-      const durationSecs = toSeconds(duration, timeUnit)
-      const perSecond = (amount / durationSecs).toFixed(4)
-      return `~${perSecond} ${tokenSymbol}/second (${rate.toLocaleString()} per ${unitSingular})`
-    }
-
-    return `~${rate.toLocaleString()} ${tokenSymbol} per ${unitSingular}`
+    return `${amountPerInterval.toLocaleString()} ${tokenSymbol} per ${unitSingular} (${duration} intervals)`
   }
 
   return (
@@ -305,92 +266,45 @@ export function CreateVestingScheduleModal({
               </div>
             </div>
 
-            {/* Share Class Selection */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium flex items-center gap-2">
-                <Layers className="h-4 w-4" />
-                Share Class (Optional)
-              </label>
-              <select
-                value={selectedShareClassId || ''}
-                onChange={(e) => {
-                  const value = e.target.value
-                  setSelectedShareClassId(value ? parseInt(value) : null)
-                }}
-                className="w-full px-3 py-2 border rounded-md bg-background"
-                disabled={isSubmitting || loadingShareClasses}
-              >
-                <option value="">No share class (common equity)</option>
-                {shareClasses.map((sc) => (
-                  <option key={sc.id} value={sc.id}>
-                    {sc.name} ({sc.symbol}) - Priority {sc.priority}, {sc.preference_multiple}x preference
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-muted-foreground">
-                Assign vested shares to a specific share class for cap table tracking
-              </p>
-            </div>
-
-            {/* Cost Basis and Price Per Share - only show when share class is selected */}
-            {selectedShareClassId && (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Cost Basis ($)</label>
-                  <input
-                    type="number"
-                    value={costBasis}
-                    onChange={(e) => setCostBasis(e.target.value)}
-                    placeholder="0.00"
-                    min="0"
-                    step="0.01"
-                    className="w-full px-3 py-2 border rounded-md bg-background"
-                    disabled={isSubmitting}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Total amount paid for shares
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Price Per Share ($)</label>
-                  <input
-                    type="number"
-                    value={pricePerShare}
-                    onChange={(e) => setPricePerShare(e.target.value)}
-                    placeholder="0.00"
-                    min="0"
-                    step="0.01"
-                    className="w-full px-3 py-2 border rounded-md bg-background"
-                    disabled={isSubmitting}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Strike price per share
-                  </p>
-                </div>
+            {/* Cost Basis and Price Per Share (optional) */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Cost Basis ($)</label>
+                <input
+                  type="number"
+                  value={costBasis}
+                  onChange={(e) => setCostBasis(e.target.value)}
+                  placeholder="0.00"
+                  min="0"
+                  step="0.01"
+                  className="w-full px-3 py-2 border rounded-md bg-background"
+                  disabled={isSubmitting}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Total amount paid (optional)
+                </p>
               </div>
-            )}
-
-            {/* Vesting Type */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Vesting Type</label>
-              <select
-                value={vestingType}
-                onChange={(e) => setVestingType(e.target.value as VestingType)}
-                className="w-full px-3 py-2 border rounded-md bg-background"
-                disabled={isSubmitting}
-              >
-                {Object.entries(vestingTypeLabels).map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
-              </select>
-              <p className="text-xs text-muted-foreground">
-                {vestingTypeDescriptions[vestingType]}
-              </p>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Price Per Share ($)</label>
+                <input
+                  type="number"
+                  value={pricePerShare}
+                  onChange={(e) => setPricePerShare(e.target.value)}
+                  placeholder="0.00"
+                  min="0"
+                  step="0.01"
+                  className="w-full px-3 py-2 border rounded-md bg-background"
+                  disabled={isSubmitting}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Strike price (optional)
+                </p>
+              </div>
             </div>
 
-            {/* Time Unit Selector */}
+            {/* Vesting Interval */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Time Unit</label>
+              <label className="text-sm font-medium">Vesting Interval</label>
               <select
                 value={timeUnit}
                 onChange={(e) => {
@@ -545,12 +459,10 @@ export function CreateVestingScheduleModal({
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <span className="text-muted-foreground">Total:</span>
                   <span>{parseInt(totalAmount || '0').toLocaleString()} {tokenSymbol}</span>
-                  {selectedShareClassId && (
-                    <>
-                      <span className="text-muted-foreground">Share Class:</span>
-                      <span>{shareClasses.find(sc => sc.id === selectedShareClassId)?.name || 'Unknown'}</span>
-                    </>
-                  )}
+                  <span className="text-muted-foreground">Share Class:</span>
+                  <span>Common Stock</span>
+                  <span className="text-muted-foreground">Interval:</span>
+                  <span>{timeUnitLabels[timeUnit]}</span>
                   {costBasis && (
                     <>
                       <span className="text-muted-foreground">Cost Basis:</span>

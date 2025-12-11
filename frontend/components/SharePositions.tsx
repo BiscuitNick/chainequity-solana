@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Fragment } from 'react'
+import { useState, useEffect, useMemo, Fragment } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { RefreshCw, ChevronDown, ChevronUp, Copy, Check, History } from 'lucide-react'
 import { WalletAddress } from '@/components/WalletAddress'
@@ -45,6 +45,7 @@ export function SharePositions({
   onRefresh,
   totalShares: propTotalShares,
 }: SharePositionsProps) {
+  const selectedSlot = useAppStore((state) => state.selectedSlot)
   const setSelectedSlot = useAppStore((state) => state.setSelectedSlot)
   // Calculate total shares from positions if not provided
   const totalShares = propTotalShares ?? positions.reduce((sum, p) => sum + p.shares, 0)
@@ -52,6 +53,13 @@ export function SharePositions({
   const [walletTransactions, setWalletTransactions] = useState<Record<string, UnifiedTransaction[]>>({})
   const [loadingTransactions, setLoadingTransactions] = useState<Set<string>>(new Set())
   const [copiedSlot, setCopiedSlot] = useState<number | null>(null)
+
+  // Clear cached transactions when the selected slot changes
+  // This ensures we re-fetch transactions filtered by the new slot
+  useMemo(() => {
+    setWalletTransactions({})
+    setExpandedRows(new Set())
+  }, [selectedSlot])
 
   const toggleRowExpanded = async (positionKey: string, wallet: string) => {
     setExpandedRows(prev => {
@@ -72,7 +80,8 @@ export function SharePositions({
   const fetchWalletTransactions = async (wallet: string) => {
     setLoadingTransactions(prev => new Set(prev).add(wallet))
     try {
-      const transactions = await api.getUnifiedTransactions(tokenId, 100, undefined, undefined, wallet)
+      // Pass selectedSlot as maxSlot to filter transactions to only those at or before the selected slot
+      const transactions = await api.getUnifiedTransactions(tokenId, 100, selectedSlot ?? undefined, undefined, wallet)
       // Filter to only share-affecting transactions
       const shareTransactions = transactions.filter(tx =>
         SHARE_AFFECTING_TX_TYPES.includes(tx.tx_type)

@@ -140,48 +140,70 @@ class VestingScheduler:
         total_newly_vested = 0
 
         for schedule in schedules:
-            # Calculate currently vested amount
-            vested_now = schedule.calculate_vested(current_time)
-            previously_released = schedule.released_amount
-            newly_vested = vested_now - previously_released
+            # Calculate new releasable intervals
+            new_intervals = schedule.calculate_releasable_intervals(current_time)
 
-            if newly_vested > 0:
-                # Record explicit VESTING_RELEASE transaction
-                await tx_service.record(
-                    token_id=token_id,
-                    tx_type=TransactionType.VESTING_RELEASE,
-                    slot=current_slot,
-                    wallet=schedule.beneficiary,
-                    amount=newly_vested,
-                    share_class_id=schedule.share_class_id,
-                    priority=schedule.share_class.priority if schedule.share_class else 99,
-                    preference_multiple=schedule.share_class.preference_multiple if schedule.share_class else 1.0,
-                    price_per_share=schedule.price_per_share,
-                    reference_id=schedule.id,
-                    reference_type="vesting_schedule",
-                    triggered_by="vesting_scheduler",
-                    data={
-                        "total_vested": vested_now,
-                        "total_released": vested_now,
-                        "total_amount": schedule.total_amount,
-                        "schedule_address": schedule.on_chain_address,
-                    },
-                )
+            if new_intervals > 0:
+                # Calculate release amount for these intervals
+                total_intervals = schedule.total_intervals()
+                amount_per = schedule.amount_per_interval()
+                remainder = schedule.remainder()
 
-                # Update the schedule's released_amount
-                schedule.released_amount = vested_now
+                previous_intervals = schedule.intervals_released or 0
+                new_total_intervals = previous_intervals + new_intervals
 
-                releases_recorded += 1
-                total_newly_vested += newly_vested
+                # Base release for new intervals
+                release_amount = amount_per * new_intervals
 
-                logger.debug(
-                    "Recorded vesting release",
-                    token_id=token_id,
-                    schedule_id=schedule.id,
-                    beneficiary=schedule.beneficiary,
-                    amount=newly_vested,
-                    slot=current_slot,
-                )
+                # Add remainder shares for final intervals
+                remainder_start = total_intervals - remainder
+                if new_total_intervals > remainder_start and previous_intervals < total_intervals:
+                    remainder_intervals_before = max(0, previous_intervals - remainder_start) if previous_intervals > remainder_start else 0
+                    remainder_intervals_now = min(new_total_intervals - remainder_start, remainder) if new_total_intervals > remainder_start else 0
+                    release_amount += remainder_intervals_now - remainder_intervals_before
+
+                if release_amount > 0:
+                    # Record explicit VESTING_RELEASE transaction
+                    await tx_service.record(
+                        token_id=token_id,
+                        tx_type=TransactionType.VESTING_RELEASE,
+                        slot=current_slot,
+                        wallet=schedule.beneficiary,
+                        amount=release_amount,
+                        share_class_id=None,  # Vesting is always common
+                        priority=99,  # Common stock priority
+                        preference_multiple=1.0,  # No preference
+                        price_per_share=schedule.price_per_share,
+                        reference_id=schedule.id,
+                        reference_type="vesting_schedule",
+                        triggered_by="vesting_scheduler",
+                        data={
+                            "intervals_released": new_intervals,
+                            "total_intervals_released": new_total_intervals,
+                            "total_intervals": total_intervals,
+                            "amount_per_interval": amount_per,
+                            "total_released": schedule.released_amount + release_amount,
+                            "total_amount": schedule.total_amount,
+                            "schedule_address": schedule.on_chain_address,
+                        },
+                    )
+
+                    # Update the schedule's state
+                    schedule.intervals_released = new_total_intervals
+                    schedule.released_amount += release_amount
+
+                    releases_recorded += 1
+                    total_newly_vested += release_amount
+
+                    logger.debug(
+                        "Recorded vesting release",
+                        token_id=token_id,
+                        schedule_id=schedule.id,
+                        beneficiary=schedule.beneficiary,
+                        amount=release_amount,
+                        intervals=new_intervals,
+                        slot=current_slot,
+                    )
 
         # Update token total_supply with all newly vested shares
         if total_newly_vested > 0:

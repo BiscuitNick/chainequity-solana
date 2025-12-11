@@ -3,7 +3,7 @@ use anchor_spl::token_2022::{self, Token2022, Transfer, TransferChecked};
 use anchor_spl::token_interface::{Mint, TokenAccount};
 use chainequity_factory::instructions::create_token::TokenConfig;
 
-use crate::state::{VestingSchedule, VestingParams, VestingType, TerminationType, VESTING_SEED, VESTING_ESCROW_SEED};
+use crate::state::{VestingSchedule, VestingParams, VestingInterval, TerminationType, VESTING_SEED, VESTING_ESCROW_SEED};
 use crate::errors::TokenError;
 use crate::events::{VestingScheduleCreated, VestedTokensReleased, VestingTerminated};
 
@@ -74,6 +74,11 @@ pub fn create_handler(ctx: Context<CreateVestingSchedule>, params: VestingParams
     require!(params.total_amount > 0, TokenError::InvalidAmount);
     require!(params.total_duration > 0, TokenError::InvalidVestingDuration);
 
+    // Validate that vesting duration (after cliff) is at least one interval
+    let vesting_duration = params.total_duration.saturating_sub(params.cliff_duration);
+    let interval_seconds = params.interval.to_seconds();
+    require!(vesting_duration >= interval_seconds, TokenError::InvalidVestingDuration);
+
     let clock = Clock::get()?;
     let schedule = &mut ctx.accounts.vesting_schedule;
 
@@ -84,7 +89,8 @@ pub fn create_handler(ctx: Context<CreateVestingSchedule>, params: VestingParams
     schedule.start_time = params.start_time;
     schedule.cliff_duration = params.cliff_duration;
     schedule.total_duration = params.total_duration;
-    schedule.vesting_type = params.vesting_type.clone();
+    schedule.interval = params.interval.clone();
+    schedule.intervals_released = 0;
     schedule.revocable = params.revocable;
     schedule.revoked = false;
     schedule.termination_type = None;
@@ -110,6 +116,10 @@ pub fn create_handler(ctx: Context<CreateVestingSchedule>, params: VestingParams
         decimals,
     )?;
 
+    // Calculate interval info for event
+    let total_intervals = schedule.total_intervals();
+    let amount_per_interval = schedule.amount_per_interval();
+
     emit!(VestingScheduleCreated {
         token_config: ctx.accounts.token_config.key(),
         schedule: schedule.key(),
@@ -118,14 +128,18 @@ pub fn create_handler(ctx: Context<CreateVestingSchedule>, params: VestingParams
         start_time: params.start_time,
         cliff_duration: params.cliff_duration,
         total_duration: params.total_duration,
-        vesting_type: params.vesting_type,
+        interval: params.interval,
+        total_intervals,
+        amount_per_interval,
         created_by: ctx.accounts.authority.key(),
         slot: clock.slot,
     });
 
-    msg!("Created vesting schedule for {} with {} tokens (funded to escrow)",
+    msg!("Created vesting schedule for {} with {} tokens ({} intervals of {} each)",
         ctx.accounts.beneficiary.key(),
-        params.total_amount
+        params.total_amount,
+        total_intervals,
+        amount_per_interval
     );
 
     Ok(())
@@ -191,15 +205,46 @@ pub fn release_handler(ctx: Context<ReleaseVestedTokens>) -> Result<()> {
 
     let schedule = &mut ctx.accounts.vesting_schedule;
 
-    // Calculate vested amount
-    let vested = calculate_vested_amount(schedule, clock.unix_timestamp);
-    let releasable = vested.saturating_sub(schedule.released_amount);
+    // Calculate new intervals available
+    let new_intervals = calculate_releasable_intervals(schedule, clock.unix_timestamp);
+    require!(new_intervals > 0, TokenError::NoTokensToRelease);
 
-    require!(releasable > 0, TokenError::NoTokensToRelease);
+    // Calculate amount to release for these intervals
+    let total_intervals = schedule.total_intervals();
+    let amount_per_interval = schedule.amount_per_interval();
+    let remainder = schedule.remainder();
 
-    // Update released amount
+    // Calculate release amount: intervals * amount_per_interval + any remainder shares
+    let previous_intervals = schedule.intervals_released;
+    let new_total_intervals = previous_intervals + new_intervals;
+
+    // Base release for new intervals
+    let mut release_amount = amount_per_interval * new_intervals;
+
+    // Add remainder shares for final intervals
+    // Remainder is distributed to the last N intervals where N = remainder
+    let remainder_start = total_intervals.saturating_sub(remainder);
+    if new_total_intervals > remainder_start && previous_intervals < total_intervals {
+        // Calculate how many of the new intervals are in the remainder zone
+        let remainder_intervals_before = if previous_intervals > remainder_start {
+            previous_intervals - remainder_start
+        } else {
+            0
+        };
+        let remainder_intervals_now = if new_total_intervals > remainder_start {
+            (new_total_intervals - remainder_start).min(remainder)
+        } else {
+            0
+        };
+        release_amount += remainder_intervals_now.saturating_sub(remainder_intervals_before);
+    }
+
+    require!(release_amount > 0, TokenError::NoTokensToRelease);
+
+    // Update schedule state
+    schedule.intervals_released = new_total_intervals;
     schedule.released_amount = schedule.released_amount
-        .checked_add(releasable)
+        .checked_add(release_amount)
         .ok_or(TokenError::MathOverflow)?;
 
     // Transfer tokens from escrow to beneficiary with PDA signing
@@ -222,7 +267,7 @@ pub fn release_handler(ctx: Context<ReleaseVestedTokens>) -> Result<()> {
             },
             signer_seeds,
         ),
-        releasable,
+        release_amount,
         decimals,
     )?;
 
@@ -230,12 +275,18 @@ pub fn release_handler(ctx: Context<ReleaseVestedTokens>) -> Result<()> {
         token_config: ctx.accounts.token_config.key(),
         schedule: schedule.key(),
         beneficiary: ctx.accounts.beneficiary.key(),
-        amount_released: releasable,
+        amount_released: release_amount,
         total_released: schedule.released_amount,
+        intervals_released: new_intervals,
+        total_intervals_released: schedule.intervals_released,
         slot: clock.slot,
     });
 
-    msg!("Released {} vested tokens to {}", releasable, ctx.accounts.beneficiary.key());
+    msg!("Released {} vested tokens ({} intervals) to {}",
+        release_amount,
+        new_intervals,
+        ctx.accounts.beneficiary.key()
+    );
 
     Ok(())
 }
@@ -377,7 +428,11 @@ pub fn terminate_handler(
     Ok(())
 }
 
-/// Calculate vested amount at a given timestamp
+/// Calculate vested amount at a given timestamp using discrete intervals
+///
+/// All vesting uses discrete intervals (minute/hour/day/month).
+/// Each interval releases the same amount: total_amount / total_intervals.
+/// Any remainder is distributed to the final intervals.
 pub fn calculate_vested_amount(schedule: &VestingSchedule, current_time: i64) -> u64 {
     // If terminated, use the frozen vested amount
     if let Some(vested_at_term) = schedule.vested_at_termination {
@@ -395,39 +450,62 @@ pub fn calculate_vested_amount(schedule: &VestingSchedule, current_time: i64) ->
         return 0;
     }
 
+    // If past total duration, return full amount
     if elapsed >= schedule.total_duration as i64 {
         return schedule.total_amount;
     }
 
-    match schedule.vesting_type {
-        VestingType::Linear => {
-            ((schedule.total_amount as u128 * elapsed as u128)
-                / schedule.total_duration as u128) as u64
-        },
-        VestingType::CliffThenLinear => {
-            if elapsed < schedule.cliff_duration as i64 {
-                0
-            } else {
-                let time_after_cliff = elapsed - schedule.cliff_duration as i64;
-                let remaining_duration = schedule.total_duration - schedule.cliff_duration;
-                if remaining_duration == 0 {
-                    schedule.total_amount
-                } else {
-                    ((schedule.total_amount as u128 * time_after_cliff as u128)
-                        / remaining_duration as u128) as u64
-                }
-            }
-        },
-        VestingType::Stepped => {
-            let period_seconds = 30 * 24 * 60 * 60i64; // 30 days
-            let periods_elapsed = elapsed / period_seconds;
-            let total_periods = schedule.total_duration as i64 / period_seconds;
-            if total_periods == 0 {
-                schedule.total_amount
-            } else {
-                ((schedule.total_amount as u128 * periods_elapsed as u128)
-                    / total_periods as u128) as u64
-            }
-        }
+    // During cliff period, nothing vests
+    if elapsed < schedule.cliff_duration as i64 {
+        return 0;
     }
+
+    // Calculate intervals elapsed after cliff
+    let time_after_cliff = (elapsed - schedule.cliff_duration as i64) as u64;
+    let interval_seconds = schedule.interval.to_seconds();
+    let intervals_elapsed = time_after_cliff / interval_seconds;
+
+    // Get interval calculations
+    let total_intervals = schedule.total_intervals();
+    let amount_per_interval = schedule.amount_per_interval();
+    let remainder = schedule.remainder();
+
+    if total_intervals == 0 {
+        return schedule.total_amount;
+    }
+
+    // Base vested amount
+    let mut vested = amount_per_interval * intervals_elapsed;
+
+    // Distribute remainder to final intervals
+    // If remainder is N, the last N intervals each get +1
+    if intervals_elapsed > (total_intervals - remainder) {
+        let extra_intervals = intervals_elapsed - (total_intervals - remainder);
+        vested += extra_intervals;
+    }
+
+    // Cap at total amount
+    vested.min(schedule.total_amount)
+}
+
+/// Calculate how many NEW intervals are available to release
+pub fn calculate_releasable_intervals(schedule: &VestingSchedule, current_time: i64) -> u64 {
+    let elapsed = current_time - schedule.start_time;
+
+    if elapsed < 0 || elapsed < schedule.cliff_duration as i64 {
+        return 0;
+    }
+
+    // If past total duration, all intervals should be released
+    if elapsed >= schedule.total_duration as i64 {
+        return schedule.total_intervals().saturating_sub(schedule.intervals_released);
+    }
+
+    // Calculate intervals elapsed after cliff
+    let time_after_cliff = (elapsed - schedule.cliff_duration as i64) as u64;
+    let interval_seconds = schedule.interval.to_seconds();
+    let intervals_elapsed = time_after_cliff / interval_seconds;
+
+    // Return new intervals (not yet released)
+    intervals_elapsed.saturating_sub(schedule.intervals_released)
 }

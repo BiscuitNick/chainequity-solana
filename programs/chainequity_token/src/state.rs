@@ -81,7 +81,36 @@ impl WalletRestrictions {
 // VESTING
 // ============================================================================
 
+/// Vesting interval unit - determines how often tokens are released
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Default)]
+pub enum VestingInterval {
+    /// Release every minute (60 seconds)
+    #[default]
+    Minute,
+    /// Release every hour (3600 seconds)
+    Hour,
+    /// Release every day (86400 seconds)
+    Day,
+    /// Release every month (~30 days = 2592000 seconds)
+    Month,
+}
+
+impl VestingInterval {
+    /// Get the interval duration in seconds
+    pub fn to_seconds(&self) -> u64 {
+        match self {
+            VestingInterval::Minute => 60,
+            VestingInterval::Hour => 3600,
+            VestingInterval::Day => 86400,
+            VestingInterval::Month => 30 * 86400, // 30 days
+        }
+    }
+}
+
 /// Vesting schedule for a beneficiary
+///
+/// All vesting is discrete interval-based: tokens release at fixed intervals
+/// (minute/hour/day/month) with equal amounts per interval.
 #[account]
 pub struct VestingSchedule {
     /// Token config this belongs to
@@ -90,16 +119,18 @@ pub struct VestingSchedule {
     pub beneficiary: Pubkey,
     /// Total tokens in schedule
     pub total_amount: u64,
-    /// Already released
+    /// Already released (via on-chain release transactions)
     pub released_amount: u64,
     /// Vesting start (unix timestamp)
     pub start_time: i64,
-    /// Seconds until cliff (0 = no cliff)
+    /// Seconds until cliff (0 = no cliff). Tokens don't vest during cliff.
     pub cliff_duration: u64,
-    /// Total vesting duration in seconds
+    /// Total vesting duration in seconds (including cliff)
     pub total_duration: u64,
-    /// Vesting type
-    pub vesting_type: VestingType,
+    /// Interval at which tokens release (minute/hour/day/month)
+    pub interval: VestingInterval,
+    /// Number of intervals completed (for tracking)
+    pub intervals_released: u64,
     /// Can issuer revoke unvested?
     pub revocable: bool,
     /// Has it been revoked/terminated?
@@ -127,7 +158,8 @@ impl VestingSchedule {
         8 +  // start_time
         8 +  // cliff_duration
         8 +  // total_duration
-        1 +  // vesting_type
+        1 +  // interval enum
+        8 +  // intervals_released
         1 +  // revocable
         1 +  // revoked
         (1 + 1) + // termination_type Option<enum>
@@ -136,8 +168,37 @@ impl VestingSchedule {
         (1 + 8) + // vested_at_termination Option<u64>
         (1 + 4 + 200) + // termination_notes Option<String>
         1;   // bump
+
+    /// Calculate total number of vesting intervals (after cliff)
+    pub fn total_intervals(&self) -> u64 {
+        let vesting_duration = self.total_duration.saturating_sub(self.cliff_duration);
+        let interval_seconds = self.interval.to_seconds();
+        if interval_seconds == 0 {
+            return 1;
+        }
+        vesting_duration / interval_seconds
+    }
+
+    /// Calculate amount per interval (equal distribution)
+    pub fn amount_per_interval(&self) -> u64 {
+        let total_intervals = self.total_intervals();
+        if total_intervals == 0 {
+            return self.total_amount;
+        }
+        self.total_amount / total_intervals
+    }
+
+    /// Calculate remainder to add to final interval
+    pub fn remainder(&self) -> u64 {
+        let total_intervals = self.total_intervals();
+        if total_intervals == 0 {
+            return 0;
+        }
+        self.total_amount % total_intervals
+    }
 }
 
+// Keep VestingType for backward compatibility during migration
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Default)]
 pub enum VestingType {
     #[default]
@@ -160,11 +221,17 @@ pub enum TerminationType {
 /// Parameters for creating a vesting schedule
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct VestingParams {
+    /// Total tokens to vest
     pub total_amount: u64,
+    /// Unix timestamp when vesting starts
     pub start_time: i64,
+    /// Cliff duration in seconds (0 = no cliff)
     pub cliff_duration: u64,
+    /// Total duration in seconds (including cliff)
     pub total_duration: u64,
-    pub vesting_type: VestingType,
+    /// Release interval (minute/hour/day/month)
+    pub interval: VestingInterval,
+    /// Can the schedule be revoked by admin?
     pub revocable: bool,
 }
 

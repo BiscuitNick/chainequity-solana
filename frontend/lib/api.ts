@@ -697,6 +697,8 @@ export interface VestingShareClassInfo {
   preference_multiple: number
 }
 
+export type VestingInterval = 'minute' | 'hour' | 'day' | 'month'
+
 export interface VestingSchedule {
   id: string
   beneficiary: string
@@ -706,16 +708,23 @@ export interface VestingSchedule {
   start_time: string
   cliff_duration: number
   total_duration: number
-  vesting_type: string
+  // New interval-based fields
+  interval: VestingInterval
+  total_intervals: number
+  intervals_released: number
+  amount_per_interval: number
+  // Deprecated - kept for backward compatibility
+  vesting_type?: string
   revocable: boolean
   is_terminated: boolean
   termination_type?: string
   terminated_at?: string
+  // Vesting shares are always common - no preference
   share_class_id?: number
   share_class?: VestingShareClassInfo
   cost_basis: number
   price_per_share: number
-  preference_amount: number
+  preference_amount: number // Always 0 for vesting
 }
 
 export interface CreateVestingRequest {
@@ -724,9 +733,10 @@ export interface CreateVestingRequest {
   start_time: number
   cliff_seconds: number
   duration_seconds: number
-  vesting_type: string
+  // New: interval-based vesting
+  interval: VestingInterval
   revocable: boolean
-  share_class_id?: number
+  // Cost basis tracking (optional)
   cost_basis?: number
   price_per_share?: number
 }

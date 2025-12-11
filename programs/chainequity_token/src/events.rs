@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::state::{AllowlistStatus, TerminationType, VestingType};
+use crate::state::{AllowlistStatus, TerminationType, VestingInterval};
 
 // ============================================================================
 // ALLOWLIST EVENTS
@@ -77,7 +77,12 @@ pub struct VestingScheduleCreated {
     pub start_time: i64,
     pub cliff_duration: u64,
     pub total_duration: u64,
-    pub vesting_type: VestingType,
+    /// Release interval (minute/hour/day/month)
+    pub interval: VestingInterval,
+    /// Total number of vesting intervals
+    pub total_intervals: u64,
+    /// Amount released per interval
+    pub amount_per_interval: u64,
     pub created_by: Pubkey,
     pub slot: u64,
 }
@@ -87,8 +92,14 @@ pub struct VestedTokensReleased {
     pub token_config: Pubkey,
     pub schedule: Pubkey,
     pub beneficiary: Pubkey,
+    /// Amount released in this transaction
     pub amount_released: u64,
+    /// Total released so far
     pub total_released: u64,
+    /// Number of intervals released in this transaction
+    pub intervals_released: u64,
+    /// Total intervals released so far
+    pub total_intervals_released: u64,
     pub slot: u64,
 }
 
