@@ -43,7 +43,6 @@ interface VestingByWallet {
   wallet: string
   schedules: VestingSchedule[]
   totalAmount: number
-  releasedAmount: number  // From schedule records (may be stale)
   vestedAmount: number
 }
 
@@ -108,14 +107,12 @@ export function ShareholderVesting({
     if (existing) {
       existing.schedules.push(schedule)
       existing.totalAmount += schedule.total_amount
-      existing.releasedAmount += schedule.released_amount
       existing.vestedAmount += schedule.vested_amount
     } else {
       acc.push({
         wallet: schedule.beneficiary,
         schedules: [schedule],
         totalAmount: schedule.total_amount,
-        releasedAmount: schedule.released_amount,
         vestedAmount: schedule.vested_amount,
       })
     }
@@ -249,7 +246,6 @@ export function ShareholderVesting({
                   <th className="text-left py-3 px-4 font-medium">Wallet</th>
                   <th className="text-right py-3 px-4 font-medium">Total Shares</th>
                   <th className="text-right py-3 px-4 font-medium">Vested</th>
-                  <th className="text-right py-3 px-4 font-medium">Released</th>
                   <th className="text-right py-3 px-4 font-medium">Unvested</th>
                   <th className="text-right py-3 px-4 font-medium">% Vested</th>
                   <th className="text-center py-3 px-4 font-medium">Schedules</th>
@@ -257,16 +253,10 @@ export function ShareholderVesting({
               </thead>
               <tbody>
                 {walletsWithVesting.map((walletVesting) => {
-                  const { wallet, schedules: walletSchedules, totalAmount, releasedAmount: scheduleReleasedAmount, vestedAmount } = walletVesting
+                  const { wallet, schedules: walletSchedules, totalAmount, vestedAmount } = walletVesting
                   const isExpanded = expandedRows.has(wallet)
                   const transactions = walletTransactions[wallet] || []
                   const isLoadingTx = loadingTransactions.has(wallet)
-
-                  // Use transaction-based released amount when available (source of truth)
-                  // Fall back to schedule's released_amount only if transactions haven't been loaded
-                  const releasedAmount = transactions.length > 0
-                    ? computeReleasedFromTransactions(transactions)
-                    : scheduleReleasedAmount
 
                   // For historical view (selectedSlot), vested amount equals released amount
                   // since vested tokens are immediately released in interval-based vesting.
@@ -306,9 +296,6 @@ export function ShareholderVesting({
                         <td className="py-3 px-4 text-right text-blue-500">
                           {displayVestedAmount.toLocaleString()}
                         </td>
-                        <td className="py-3 px-4 text-right text-green-500">
-                          {releasedAmount.toLocaleString()}
-                        </td>
                         <td className="py-3 px-4 text-right text-yellow-500">
                           {unvestedAmount.toLocaleString()}
                         </td>
@@ -325,7 +312,7 @@ export function ShareholderVesting({
                       {/* Expanded vesting details */}
                       {isExpanded && (
                         <tr className="bg-muted/30">
-                          <td colSpan={7} className="py-4 px-4">
+                          <td colSpan={6} className="py-4 px-4">
                             <div className="space-y-6">
                               {/* Current Vesting Schedules */}
                               {currentSchedules.length > 0 && (

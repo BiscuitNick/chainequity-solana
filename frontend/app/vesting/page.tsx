@@ -43,25 +43,6 @@ export default function VestingPage() {
     fetchVestingSchedules()
   }, [selectedToken])
 
-  const handleReleaseVested = async (scheduleId: string) => {
-    if (!selectedToken) return
-    setActionLoading(scheduleId)
-    setError(null)
-    setActionSuccess(null)
-
-    try {
-      await api.releaseVestedTokens(selectedToken.tokenId, scheduleId)
-      setActionSuccess('Successfully released vested tokens')
-      // Refresh schedules to show updated amounts
-      await fetchVestingSchedules()
-      setTimeout(() => setActionSuccess(null), 3000)
-    } catch (e: any) {
-      setError(e.detail || 'Failed to release vested tokens')
-    } finally {
-      setActionLoading(null)
-    }
-  }
-
   const handleTerminate = async (scheduleId: string, terminationType: TerminationType, notes: string) => {
     if (!selectedToken) return
     setActionLoading(scheduleId)
@@ -367,29 +348,19 @@ export default function VestingPage() {
                       />
                     </div>
                   </div>
-                  {!schedule.is_terminated && (
+                  {!schedule.is_terminated && schedule.revocable && (
                     <div className="mt-3 space-y-3">
                       <div className="flex gap-2">
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleReleaseVested(schedule.id)}
+                          className="text-red-500"
+                          onClick={() => setTerminateConfirm({ scheduleId: schedule.id, type: 'standard' })}
                           disabled={actionLoading === schedule.id}
                         >
-                          {actionLoading === schedule.id ? 'Processing...' : 'Release Vested'}
+                          <AlertTriangle className="h-3 w-3 mr-1" />
+                          Terminate
                         </Button>
-                        {schedule.revocable && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-red-500"
-                            onClick={() => setTerminateConfirm({ scheduleId: schedule.id, type: 'standard' })}
-                            disabled={actionLoading === schedule.id}
-                          >
-                            <AlertTriangle className="h-3 w-3 mr-1" />
-                            Terminate
-                          </Button>
-                        )}
                       </div>
 
                       {/* Terminate Confirmation UI */}
@@ -407,8 +378,7 @@ export default function VestingPage() {
                               className="w-full px-2 py-1 text-sm border rounded bg-background"
                               disabled={actionLoading === schedule.id}
                             >
-                              <option value="standard">Standard - Keep vested, forfeit unvested</option>
-                              <option value="for_cause">For Cause - Forfeit all tokens</option>
+                              <option value="standard">Standard - Keep vested, stop future vesting</option>
                               <option value="accelerated">Accelerated - 100% immediate vesting</option>
                             </select>
                           </div>
