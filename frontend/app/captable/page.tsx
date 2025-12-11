@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/stores/useAppStore'
 import { Download, RefreshCw, AlertTriangle } from 'lucide-react'
-import { api, CapTableResponse, ReconstructedState, EnhancedCapTableResponse } from '@/lib/api'
+import { api, CapTableResponse, ReconstructedState, EnhancedCapTableResponse, EnhancedCapTableByWalletResponse } from '@/lib/api'
 import { WalletAddress } from '@/components/WalletAddress'
 import { OwnershipDistribution } from '@/components/OwnershipDistribution'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -17,6 +17,7 @@ export default function CapTablePage() {
   const [capTable, setCapTable] = useState<CapTableResponse | null>(null)
   const [reconstructedState, setReconstructedState] = useState<ReconstructedState | null>(null)
   const [enhancedCapTable, setEnhancedCapTable] = useState<EnhancedCapTableResponse | null>(null)
+  const [enhancedCapTableByWallet, setEnhancedCapTableByWallet] = useState<EnhancedCapTableByWalletResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -127,10 +128,15 @@ export default function CapTablePage() {
       }
       // Also fetch enhanced cap table for price info (for live data only)
       if (!isViewingHistorical) {
-        const enhancedData = await api.getEnhancedCapTable(selectedToken.tokenId).catch(() => null)
+        const [enhancedData, enhancedByWalletData] = await Promise.all([
+          api.getEnhancedCapTable(selectedToken.tokenId).catch(() => null),
+          api.getEnhancedCapTableByWallet(selectedToken.tokenId).catch(() => null),
+        ])
         setEnhancedCapTable(enhancedData)
+        setEnhancedCapTableByWallet(enhancedByWalletData)
       } else {
         setEnhancedCapTable(null)
+        setEnhancedCapTableByWallet(null)
       }
     } catch (e: any) {
       console.error('Failed to fetch cap table:', e)
@@ -166,6 +172,23 @@ export default function CapTablePage() {
   const holders = capTable?.holders || []
   const totalSupply = capTable?.total_supply || 0
   const holderCount = capTable?.holder_count || 0
+
+  // Build holders with cost_basis from enhanced cap table by wallet
+  const holdersWithCostBasis = useMemo(() => {
+    if (!enhancedCapTableByWallet?.wallets) return holders
+
+    // Create a map of wallet -> total_cost_basis from enhanced cap table
+    const costBasisMap = new Map<string, number>()
+    for (const walletSummary of enhancedCapTableByWallet.wallets) {
+      costBasisMap.set(walletSummary.wallet, walletSummary.total_cost_basis)
+    }
+
+    // Merge cost_basis into holders
+    return holders.map(holder => ({
+      ...holder,
+      cost_basis: costBasisMap.get(holder.wallet),
+    }))
+  }, [holders, enhancedCapTableByWallet?.wallets])
 
   if (!selectedToken) {
     return (
@@ -276,7 +299,7 @@ export default function CapTablePage() {
       </div>
 
       <OwnershipDistribution
-        holders={holders}
+        holders={holdersWithCostBasis}
         loading={loading}
         title="Ownership Distribution"
         description="Top shareholders by ownership"

@@ -2,10 +2,11 @@
 
 import { useState, useEffect, Fragment } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { RefreshCw, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
+import { RefreshCw, ChevronDown, ChevronUp, Copy, Check, History } from 'lucide-react'
 import { WalletAddress } from '@/components/WalletAddress'
 import { api, SharePosition, ShareClass, UnifiedTransaction } from '@/lib/api'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { useAppStore } from '@/stores/useAppStore'
 
 // Helper to format cents as whole dollars (rounded)
 const formatDollarsRounded = (cents: number) => {
@@ -44,6 +45,7 @@ export function SharePositions({
   onRefresh,
   totalShares: propTotalShares,
 }: SharePositionsProps) {
+  const setSelectedSlot = useAppStore((state) => state.setSelectedSlot)
   // Calculate total shares from positions if not provided
   const totalShares = propTotalShares ?? positions.reduce((sum, p) => sum + p.shares, 0)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
@@ -245,10 +247,20 @@ export function SharePositions({
                           {totalShares > 0 ? ((position.shares / totalShares) * 100).toFixed(2) : '0.00'}%
                         </td>
                         <td className="py-3 px-4 text-right">
-                          {formatDollarsRounded(position.cost_basis)}
+                          <div>{formatDollarsRounded(position.cost_basis)}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {position.shares > 0
+                              ? formatDollarsRounded(position.cost_basis / position.shares) + '/share'
+                              : '—'}
+                          </div>
                         </td>
                         <td className="py-3 px-4 text-right">
-                          {formatDollarsRounded(currentValue)}
+                          <div>{formatDollarsRounded(currentValue)}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {position.shares > 0
+                              ? formatDollarsRounded(currentValue / position.shares) + '/share'
+                              : '—'}
+                          </div>
                         </td>
                         <td className="py-3 px-4 text-right">
                           <div>{formatDollarsRounded(preference)}</div>
@@ -280,8 +292,10 @@ export function SharePositions({
                                         <th className="text-left py-2 px-2 font-medium">Share Class</th>
                                         <th className="text-right py-2 px-2 font-medium">Shares In</th>
                                         <th className="text-right py-2 px-2 font-medium">Shares Out</th>
+                                        <th className="text-right py-2 px-2 font-medium">Total Paid</th>
                                         <th className="text-left py-2 px-2 font-medium">Date</th>
                                         <th className="text-left py-2 px-2 font-medium">Slot</th>
+                                        <th className="text-center py-2 px-2 font-medium">Actions</th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -307,6 +321,11 @@ export function SharePositions({
                                             </td>
                                             <td className="py-2 px-2 text-right font-medium text-red-600">
                                               {!isPositive && shares > 0 ? `-${shares.toLocaleString()}` : '—'}
+                                            </td>
+                                            <td className="py-2 px-2 text-right font-medium">
+                                              {tx.amount_secondary && tx.amount_secondary > 0
+                                                ? formatDollarsRounded(tx.amount_secondary)
+                                                : '—'}
                                             </td>
                                             <td className="py-2 px-2 text-muted-foreground text-xs">
                                               {new Date(tx.created_at).toLocaleDateString()}
@@ -334,6 +353,24 @@ export function SharePositions({
                                                 </Tooltip>
                                               </div>
                                             </td>
+                                            <td className="py-2 px-2">
+                                              <div className="flex items-center justify-center">
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <button
+                                                      onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        setSelectedSlot(tx.slot)
+                                                      }}
+                                                      className="p-1 hover:bg-muted rounded"
+                                                    >
+                                                      <History className="h-3.5 w-3.5 text-muted-foreground hover:text-primary" />
+                                                    </button>
+                                                  </TooltipTrigger>
+                                                  <TooltipContent>View state at this slot</TooltipContent>
+                                                </Tooltip>
+                                              </div>
+                                            </td>
                                           </tr>
                                         )
                                       })}
@@ -353,7 +390,12 @@ export function SharePositions({
                                             .reduce((sum, tx) => sum + (tx.amount || 0), 0)
                                             .toLocaleString()}
                                         </td>
-                                        <td colSpan={2} className="py-2 px-2 text-right">
+                                        <td className="py-2 px-2 text-right font-medium">
+                                          {formatDollarsRounded(
+                                            transactions.reduce((sum, tx) => sum + (tx.amount_secondary || 0), 0)
+                                          )}
+                                        </td>
+                                        <td colSpan={3} className="py-2 px-2 text-right">
                                           <span className="text-muted-foreground">Net: </span>
                                           <span className="font-bold">
                                             {(

@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useState, Fragment } from 'react'
+import { useEffect, useState, Fragment, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useAppStore } from '@/stores/useAppStore'
-import api, { CapTableResponse, Proposal, TransferStatsResponse, IssuanceStatsResponse, UnifiedTransaction, ReconstructedState, EnhancedCapTableResponse } from '@/lib/api'
+import api, { CapTableResponse, Proposal, TransferStatsResponse, IssuanceStatsResponse, UnifiedTransaction, ReconstructedState, EnhancedCapTableResponse, EnhancedCapTableByWalletResponse } from '@/lib/api'
 import { WalletAddress } from '@/components/WalletAddress'
 import { OwnershipDistribution } from '@/components/OwnershipDistribution'
 import { AlertTriangle, Copy, History, Check, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react'
@@ -43,6 +43,7 @@ export default function DashboardPage() {
   const [capTable, setCapTable] = useState<CapTableResponse | null>(null)
   const [reconstructedState, setReconstructedState] = useState<ReconstructedState | null>(null)
   const [enhancedCapTable, setEnhancedCapTable] = useState<EnhancedCapTableResponse | null>(null)
+  const [enhancedCapTableByWallet, setEnhancedCapTableByWallet] = useState<EnhancedCapTableByWalletResponse | null>(null)
   const [proposals, setProposals] = useState<Proposal[]>([])
   const [transferStats, setTransferStats] = useState<TransferStatsResponse | null>(null)
   const [issuanceStats, setIssuanceStats] = useState<IssuanceStatsResponse | null>(null)
@@ -216,14 +217,16 @@ export default function DashboardPage() {
         } else {
           // Live data - use transaction-based state reconstruction for consistency
           // Get current slot first, then reconstruct state at that slot
-          const [currentSlotResponse, transactions, proposalsData, enhancedCapTableData] = await Promise.all([
+          const [currentSlotResponse, transactions, proposalsData, enhancedCapTableData, enhancedCapTableByWalletData] = await Promise.all([
             api.getCurrentSlot().catch(() => ({ slot: 0 })),
             api.getUnifiedTransactions(selectedToken.tokenId, 100).catch(() => []),
             api.getProposals(selectedToken.tokenId, 'active').catch(() => []),
             api.getEnhancedCapTable(selectedToken.tokenId).catch(() => null),
+            api.getEnhancedCapTableByWallet(selectedToken.tokenId).catch(() => null),
           ])
 
           setEnhancedCapTable(enhancedCapTableData)
+          setEnhancedCapTableByWallet(enhancedCapTableByWalletData)
 
           const currentSlot = currentSlotResponse.slot || 0
 
@@ -297,6 +300,24 @@ export default function DashboardPage() {
   const mintCount = allActivity.filter(a => a.type === 'mint').length
   const transferCount = allActivity.filter(a => a.type === 'transfer').length
   const shareGrantCount = allActivity.filter(a => a.type === 'share_grant').length
+
+  // Build holders with cost_basis from enhanced cap table by wallet
+  const holdersWithCostBasis = useMemo(() => {
+    const holders = capTable?.holders || []
+    if (!enhancedCapTableByWallet?.wallets) return holders
+
+    // Create a map of wallet -> total_cost_basis from enhanced cap table
+    const costBasisMap = new Map<string, number>()
+    for (const walletSummary of enhancedCapTableByWallet.wallets) {
+      costBasisMap.set(walletSummary.wallet, walletSummary.total_cost_basis)
+    }
+
+    // Merge cost_basis into holders
+    return holders.map(holder => ({
+      ...holder,
+      cost_basis: costBasisMap.get(holder.wallet),
+    }))
+  }, [capTable?.holders, enhancedCapTableByWallet?.wallets])
 
   // Helper to check if a field is relevant for a transaction type
   const isFieldRelevant = (activity: Activity, field: 'from' | 'to' | 'amount') => {
@@ -446,7 +467,7 @@ export default function DashboardPage() {
       </div>
 
       <OwnershipDistribution
-        holders={capTable?.holders || []}
+        holders={holdersWithCostBasis}
         loading={loading}
         title="Ownership Distribution"
         description="Token holder breakdown"

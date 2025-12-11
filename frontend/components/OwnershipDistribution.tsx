@@ -3,10 +3,11 @@
 import { useState, useMemo, Fragment } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Table2, PieChart as PieChartIcon, BarChart3, ChevronDown, ChevronUp, RefreshCw, Copy, Check } from 'lucide-react'
+import { Table2, PieChart as PieChartIcon, BarChart3, ChevronDown, ChevronUp, RefreshCw, Copy, Check, History } from 'lucide-react'
 import { WalletAddress } from '@/components/WalletAddress'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { api, UnifiedTransaction } from '@/lib/api'
+import { useAppStore } from '@/stores/useAppStore'
 import {
   PieChart,
   Pie,
@@ -23,6 +24,7 @@ export interface Holder {
   wallet: string
   balance: number
   ownership_pct: number
+  cost_basis?: number // Total amount paid for shares (in cents)
 }
 
 interface OwnershipDistributionProps {
@@ -84,6 +86,7 @@ interface CustomTooltipProps {
       ownership_pct: number
       isOthers: boolean
       totalValue?: number
+      costBasis?: number
     }
   }>
   pricePerShare?: number
@@ -146,6 +149,7 @@ export function OwnershipDistribution({
   pricePerShare,
   tokenId,
 }: OwnershipDistributionProps) {
+  const setSelectedSlot = useAppStore((state) => state.setSelectedSlot)
   const [viewMode, setViewMode] = useState<ViewMode>('table')
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [walletTransactions, setWalletTransactions] = useState<Record<string, UnifiedTransaction[]>>({})
@@ -214,11 +218,13 @@ export function OwnershipDistribution({
       isOthers: false,
       name: truncateWallet(h.wallet, false),
       totalValue: pricePerShare ? h.balance * pricePerShare : undefined,
+      costBasis: h.cost_basis,
     }))
 
     if (others.length > 0) {
       const othersTotal = others.reduce((sum, h) => sum + h.balance, 0)
       const othersPct = others.reduce((sum, h) => sum + h.ownership_pct, 0)
+      const othersCostBasis = others.reduce((sum, h) => sum + (h.cost_basis || 0), 0)
       const othersName = `Others (${others.length})`
       result.push({
         wallet: othersName,
@@ -228,6 +234,7 @@ export function OwnershipDistribution({
         isOthers: true,
         name: othersName,
         totalValue: pricePerShare ? othersTotal * pricePerShare : undefined,
+        costBasis: othersCostBasis > 0 ? othersCostBasis : undefined,
       })
     }
 
@@ -235,6 +242,7 @@ export function OwnershipDistribution({
   }, [holders, pricePerShare])
 
   const showTotalColumn = pricePerShare !== undefined && pricePerShare > 0
+  const hasCostData = holders.some(h => h.cost_basis !== undefined && h.cost_basis > 0)
 
   return (
     <Card>
@@ -291,8 +299,14 @@ export function OwnershipDistribution({
                     <th className="text-left py-3 px-4 font-medium">Shareholder</th>
                     <th className="text-right py-3 px-4 font-medium">Shares</th>
                     <th className="text-right py-3 px-4 font-medium">% Owned</th>
+                    {hasCostData && (
+                      <>
+                        <th className="text-right py-3 px-4 font-medium">Total Paid</th>
+                        <th className="text-right py-3 px-4 font-medium">Cost/Share</th>
+                      </>
+                    )}
                     {showTotalColumn && (
-                      <th className="text-right py-3 px-4 font-medium">Total</th>
+                      <th className="text-right py-3 px-4 font-medium">Current Value</th>
                     )}
                   </tr>
                 </thead>
@@ -337,6 +351,18 @@ export function OwnershipDistribution({
                           <td className="py-3 px-4 text-right">
                             {item.ownership_pct.toFixed(2)}%
                           </td>
+                          {hasCostData && (
+                            <>
+                              <td className="py-3 px-4 text-right font-medium">
+                                {item.costBasis !== undefined && item.costBasis > 0 ? formatDollarsRounded(item.costBasis) : '—'}
+                              </td>
+                              <td className="py-3 px-4 text-right text-muted-foreground">
+                                {item.costBasis !== undefined && item.costBasis > 0 && item.balance > 0
+                                  ? formatDollarsRounded(item.costBasis / item.balance)
+                                  : '—'}
+                              </td>
+                            </>
+                          )}
                           {showTotalColumn && (
                             <td className="py-3 px-4 text-right font-medium">
                               {item.totalValue !== undefined ? formatDollarsRounded(item.totalValue) : '—'}
@@ -347,7 +373,7 @@ export function OwnershipDistribution({
                         {/* Expanded transaction details */}
                         {isExpanded && !item.isOthers && (
                           <tr className="bg-muted/30">
-                            <td colSpan={showTotalColumn ? 4 : 3} className="py-3 px-4">
+                            <td colSpan={3 + (hasCostData ? 2 : 0) + (showTotalColumn ? 1 : 0)} className="py-3 px-4">
                               <div className="space-y-3">
                                 <h4 className="font-medium text-sm">Transaction History</h4>
                                 {isLoadingTx ? (
@@ -365,8 +391,10 @@ export function OwnershipDistribution({
                                           <th className="text-left py-2 px-2 font-medium">Type</th>
                                           <th className="text-right py-2 px-2 font-medium">Shares In</th>
                                           <th className="text-right py-2 px-2 font-medium">Shares Out</th>
+                                          <th className="text-right py-2 px-2 font-medium">Total Paid</th>
                                           <th className="text-left py-2 px-2 font-medium">Date</th>
                                           <th className="text-left py-2 px-2 font-medium">Slot</th>
+                                          <th className="text-center py-2 px-2 font-medium">Actions</th>
                                         </tr>
                                       </thead>
                                       <tbody>
@@ -388,6 +416,11 @@ export function OwnershipDistribution({
                                               </td>
                                               <td className="py-2 px-2 text-right font-medium text-red-600">
                                                 {!isPositive && shares > 0 ? `-${shares.toLocaleString()}` : '—'}
+                                              </td>
+                                              <td className="py-2 px-2 text-right font-medium">
+                                                {tx.amount_secondary && tx.amount_secondary > 0
+                                                  ? formatDollarsRounded(tx.amount_secondary)
+                                                  : '—'}
                                               </td>
                                               <td className="py-2 px-2 text-muted-foreground text-xs">
                                                 {new Date(tx.created_at).toLocaleDateString()}
@@ -415,6 +448,24 @@ export function OwnershipDistribution({
                                                   </Tooltip>
                                                 </div>
                                               </td>
+                                              <td className="py-2 px-2">
+                                                <div className="flex items-center justify-center">
+                                                  <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                      <button
+                                                        onClick={(e) => {
+                                                          e.stopPropagation()
+                                                          setSelectedSlot(tx.slot)
+                                                        }}
+                                                        className="p-1 hover:bg-muted rounded"
+                                                      >
+                                                        <History className="h-3.5 w-3.5 text-muted-foreground hover:text-primary" />
+                                                      </button>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>View state at this slot</TooltipContent>
+                                                  </Tooltip>
+                                                </div>
+                                              </td>
                                             </tr>
                                           )
                                         })}
@@ -434,7 +485,12 @@ export function OwnershipDistribution({
                                               .reduce((sum, tx) => sum + (tx.amount || 0), 0)
                                               .toLocaleString()}
                                           </td>
-                                          <td colSpan={2} className="py-2 px-2 text-right">
+                                          <td className="py-2 px-2 text-right font-medium">
+                                            {formatDollarsRounded(
+                                              transactions.reduce((sum, tx) => sum + (tx.amount_secondary || 0), 0)
+                                            )}
+                                          </td>
+                                          <td colSpan={3} className="py-2 px-2 text-right">
                                             <span className="text-muted-foreground">Net: </span>
                                             <span className="font-bold">
                                               {(
