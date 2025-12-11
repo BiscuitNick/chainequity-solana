@@ -1,4 +1,5 @@
 """Vesting API endpoints"""
+import base64
 from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -261,7 +262,10 @@ async def create_vesting_schedule(
 
     # Build transaction data
     solana_client = await get_solana_client()
-    token_config_pda, _ = solana_client.derive_token_config_pda(Pubkey.from_string(token.mint_address))
+    # mint_address is stored as base64 in DB, decode to bytes then create Pubkey
+    mint_bytes = base64.b64decode(token.mint_address)
+    mint_pubkey = Pubkey(mint_bytes)
+    token_config_pda, _ = solana_client.derive_token_config_pda(mint_pubkey)
     vesting_pda, _ = solana_client.derive_vesting_pda(token_config_pda, beneficiary_pubkey, request.start_time)
 
     # Create vesting schedule record in database
