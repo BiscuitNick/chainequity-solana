@@ -294,7 +294,7 @@ export default function CapTablePage() {
         </Card>
       )}
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Total Shares</CardTitle>
@@ -323,17 +323,6 @@ export default function CapTablePage() {
             </div>
             <p className="text-xs text-muted-foreground">
               {holders.length > 0 ? `${holders[0].wallet.slice(0, 4)}...${holders[0].wallet.slice(-4)}` : '—'}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className={isViewingHistorical ? 'border-amber-500/50' : ''}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Slot</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{loading ? '...' : capTable?.slot?.toLocaleString() || '—'}</div>
-            <p className="text-xs text-muted-foreground">
-              {isViewingHistorical ? 'historical snapshot' : 'latest snapshot'}
             </p>
           </CardContent>
         </Card>

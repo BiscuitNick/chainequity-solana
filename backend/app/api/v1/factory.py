@@ -128,8 +128,8 @@ async def create_token(request: CreateTokenRequest, db: AsyncSession = Depends(g
             )
 
     # Get the next token_id
-    max_id_result = await db.execute(select(func.max(Token.token_id)))
-    max_id = max_id_result.scalar() or -1
+    max_id_result = await db.execute(select(func.coalesce(func.max(Token.token_id), -1)))
+    max_id = max_id_result.scalar_one()
     new_token_id = max_id + 1
 
     # Generate placeholder addresses for demo mode

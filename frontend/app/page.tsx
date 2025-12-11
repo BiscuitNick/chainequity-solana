@@ -410,7 +410,7 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Supply</CardTitle>
@@ -432,25 +432,6 @@ export default function DashboardPage() {
               {capTable?.holder_count ?? '—'}
             </div>
             <p className="text-xs text-muted-foreground">shareholders</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {isViewingHistorical ? 'Activity (Total)' : 'Activity (24h)'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {activity24h > 0 ? activity24h : '—'}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {isViewingHistorical
-                ? `${mintCount} mints, ${transferCount} transfers, ${shareGrantCount} grants`
-                : `${issuanceStats?.issuances_24h ?? 0} mints, ${transferStats?.transfers_24h ?? 0} transfers`
-              }
-            </p>
           </CardContent>
         </Card>
 
@@ -602,17 +583,17 @@ export default function DashboardPage() {
                           <td className="py-2 px-2 text-right font-medium whitespace-nowrap">
                             {/* Total column: show dollar amounts for relevant transaction types */}
                             {(() => {
-                              // Dividend: total payout = shares * amount per share (both in cents, amount is stored as total)
+                              // Dividend: total payout is stored in dollars (not cents)
                               if (activity.type === 'dividend_payment' && activity.amount) {
-                                return `$${(activity.amount / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                return `$${Math.round(activity.amount).toLocaleString()}`
                               }
                               // Share purchases (investment/mint/share_grant with cost): amount_secondary is cost basis in cents
                               if (['mint', 'share_grant', 'investment'].includes(activity.type) && activity.amountSecondary && activity.amountSecondary > 0) {
-                                return `$${(activity.amountSecondary / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                return `$${Math.round(activity.amountSecondary / 100).toLocaleString()}`
                               }
                               // Funding round: show target_amount from data
                               if ((activity.type === 'funding_round_create' || activity.type === 'funding_round_close') && activity.data?.target_amount) {
-                                return `$${(activity.data.target_amount / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                return `$${Math.round(activity.data.target_amount / 100).toLocaleString()}`
                               }
                               return <span className="text-muted-foreground">—</span>
                             })()}
@@ -785,7 +766,7 @@ export default function DashboardPage() {
                                     </div>
                                     <div>
                                       <span className="text-muted-foreground">Total Payment:</span>
-                                      <p className="font-medium">${((activity.amount || 0) / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                      <p className="font-medium">${(activity.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                                     </div>
                                     {activity.data.payment_token && (
                                       <div>

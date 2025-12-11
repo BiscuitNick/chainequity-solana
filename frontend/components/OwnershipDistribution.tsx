@@ -2,8 +2,8 @@
 
 import { useState, useMemo, Fragment } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Table2, PieChart as PieChartIcon, BarChart3, ChevronDown, ChevronUp, RefreshCw, Copy, Check, History } from 'lucide-react'
+import { ViewModeToggle, ViewMode } from '@/components/ui/view-mode-toggle'
+import { ChevronDown, ChevronUp, RefreshCw, Copy, Check, History } from 'lucide-react'
 import { WalletAddress } from '@/components/WalletAddress'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { api, UnifiedTransaction } from '@/lib/api'
@@ -60,8 +60,6 @@ const CHART_COLORS = [
   'hsl(330, 75%, 55%)',   // pink
   'hsl(210, 20%, 50%)',   // gray for Others
 ]
-
-type ViewMode = 'table' | 'pie' | 'bar'
 
 function truncateWallet(wallet: string, isOthers: boolean): string {
   if (isOthers) return wallet
@@ -261,35 +259,7 @@ export function OwnershipDistribution({
           <CardTitle>{title}</CardTitle>
           <CardDescription>{description}</CardDescription>
         </div>
-        <div className="flex items-center gap-1 bg-muted rounded-md p-1">
-          <Button
-            variant={viewMode === 'table' ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 px-2"
-            onClick={() => setViewMode('table')}
-            aria-label="Table view"
-          >
-            <Table2 className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={viewMode === 'pie' ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 px-2"
-            onClick={() => setViewMode('pie')}
-            aria-label="Pie chart view"
-          >
-            <PieChartIcon className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={viewMode === 'bar' ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 px-2"
-            onClick={() => setViewMode('bar')}
-            aria-label="Bar chart view"
-          >
-            <BarChart3 className="h-4 w-4" />
-          </Button>
-        </div>
+        <ViewModeToggle value={viewMode} onChange={setViewMode} />
       </CardHeader>
       <CardContent>
         {loading ? (

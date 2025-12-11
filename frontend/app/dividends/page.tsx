@@ -243,7 +243,7 @@ export default function DividendsPage() {
           round_number: roundNumber,
           payments: [],
           total_pool: 0,
-          amount_per_share: txData?.dividend_per_share || 0,
+          amount_per_share: (txData?.amount_per_share || 0) / 100,  // Convert from cents to dollars
           total_recipients: 0,
           total_distributed: 0,
           created_at: tx.created_at,
@@ -508,10 +508,10 @@ export default function DividendsPage() {
                                   <WalletAddress address={tx.wallet_to || ''} />
                                 </td>
                                 <td className="py-2 px-2 text-right text-muted-foreground text-xs">
-                                  ${txData?.dividend_per_share?.toFixed(4) || '—'}
+                                  ${((txData?.amount_per_share || 0) / 100).toFixed(4)}
                                 </td>
                                 <td className="py-2 px-2 text-right text-xs">
-                                  {(txData?.shares || 0).toLocaleString()}
+                                  {(txData?.shares_held || 0).toLocaleString()}
                                 </td>
                                 <td className="py-2 px-2 text-right font-medium text-xs">
                                   ${(tx.amount || 0).toLocaleString()}

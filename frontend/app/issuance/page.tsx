@@ -476,10 +476,10 @@ export default function IssuancePage() {
                     <Input
                       id="costBasis"
                       type="number"
-                      step="0.01"
+                      step="1"
                       value={costBasis}
                       onChange={(e) => setCostBasis(e.target.value)}
-                      placeholder="0.00 for grants"
+                      placeholder="0 for grants"
                     />
                     <p className="text-xs text-muted-foreground">
                       Total amount paid. Leave at 0 for founder/employee grants.
