@@ -12,7 +12,7 @@ import { useAppStore } from '@/stores/useAppStore'
 import { Plus, ThumbsUp, ThumbsDown, Minus, Clock, CheckCircle, XCircle, RefreshCw, Vote, Wallet } from 'lucide-react'
 import { api, Proposal } from '@/lib/api'
 import { useSolanaWallet } from '@/hooks/useSolana'
-import { formatDate } from '@/lib/utils'
+import { formatDate, formatDateTime } from '@/lib/utils'
 
 // Governance action types - Limited to core corporate actions
 const GOVERNANCE_ACTIONS = [
@@ -344,7 +344,7 @@ export default function GovernancePage() {
                         <p className="text-sm text-muted-foreground mt-1">{proposal.description || JSON.stringify(proposal.action_data)}</p>
                         <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                           <span>Proposed by: {proposal.proposer.slice(0, 4)}...{proposal.proposer.slice(-4)}</span>
-                          <span>Ends: {formatDate(proposal.voting_ends)}</span>
+                          <span>Ends: {formatDateTime(proposal.voting_ends)}</span>
                           {proposal.executed_at && (
                             <span>Executed: {formatDate(proposal.executed_at)}</span>
                           )}
